@@ -1,0 +1,9 @@
+{
+  "short_name": "BusMS",
+  "name": "BusMS - Bus Management System",
+  "icons": [],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#0f172a",
+  "background_color": "#ffffff"
+}
