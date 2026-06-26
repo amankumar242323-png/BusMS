@@ -1,4 +1,3 @@
-```javascript
 import axios from "axios";
 
 // Backend URL
@@ -116,4 +115,4 @@ export const getAdminStats = () =>
   api.get("/api/admin/stats");
 
 export default api;
-```
+
