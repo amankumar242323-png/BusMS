@@ -1,4 +1,5 @@
-import axios from 'axios';
+```javascript
+import axios from "axios";
 
 // Backend URL
 const BASE_URL =
@@ -11,72 +12,108 @@ const api = axios.create({
   },
 });
 
-// Attach JWT to every request
+// Attach JWT token to every request
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
+
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+
   return config;
 });
 
-// ── Auth ─────────────────────────────────────────────────
-export const register = (data) => api.post("/auth/register", data);
-export const login = (data) => api.post("/auth/login", data);
+// ===================== AUTH =====================
+export const register = (data) =>
+  api.post("/api/auth/register", data);
 
-// ── Buses ────────────────────────────────────────────────
-export const getBuses = () => api.get("/buses");
-export const getBus = (id) => api.get(`/buses/${id}`);
-export const addBus = (data) => api.post("/buses", data);
-export const updateBus = (id, data) => api.put(`/buses/${id}`, data);
-export const deleteBus = (id) => api.delete(`/buses/${id}`);
+export const login = (data) =>
+  api.post("/api/auth/login", data);
 
-// ── Routes ───────────────────────────────────────────────
-export const getRoutes = () => api.get("/routes");
-export const addRoute = (data) => api.post("/routes", data);
-export const updateRoute = (id, data) => api.put(`/routes/${id}`, data);
-export const deleteRoute = (id) => api.delete(`/routes/${id}`);
+// ===================== BUSES =====================
+export const getBuses = () =>
+  api.get("/api/buses");
 
-// ── Schedules ────────────────────────────────────────────
+export const getBus = (id) =>
+  api.get(`/api/buses/${id}`);
+
+export const addBus = (data) =>
+  api.post("/api/buses", data);
+
+export const updateBus = (id, data) =>
+  api.put(`/api/buses/${id}`, data);
+
+export const deleteBus = (id) =>
+  api.delete(`/api/buses/${id}`);
+
+// ===================== ROUTES =====================
+export const getRoutes = () =>
+  api.get("/api/routes");
+
+export const addRoute = (data) =>
+  api.post("/api/routes", data);
+
+export const updateRoute = (id, data) =>
+  api.put(`/api/routes/${id}`, data);
+
+export const deleteRoute = (id) =>
+  api.delete(`/api/routes/${id}`);
+
+// ===================== SCHEDULES =====================
 export const searchSchedules = (params) =>
-  api.get("/schedules", { params });
+  api.get("/api/schedules", { params });
 
-export const getSchedules = () => api.get("/schedules");
-export const getAllSchedules = () => api.get("/schedules/admin/all");
-export const getSchedule = (id) => api.get(`/schedules/${id}`);
-export const addSchedule = (data) => api.post("/schedules", data);
+export const getSchedules = () =>
+  api.get("/api/schedules");
+
+export const getAllSchedules = () =>
+  api.get("/api/schedules/admin/all");
+
+export const getSchedule = (id) =>
+  api.get(`/api/schedules/${id}`);
+
+export const addSchedule = (data) =>
+  api.post("/api/schedules", data);
+
 export const updateSchedule = (id, data) =>
-  api.put(`/schedules/${id}`, data);
-export const deleteSchedule = (id) => api.delete(`/schedules/${id}`);
+  api.put(`/api/schedules/${id}`, data);
 
-// ── Bookings ─────────────────────────────────────────────
+export const deleteSchedule = (id) =>
+  api.delete(`/api/schedules/${id}`);
+
+// ===================== BOOKINGS =====================
 export const createBooking = (data) =>
-  api.post("/bookings", data);
+  api.post("/api/bookings", data);
 
-export const getMyBookings = () => api.get("/bookings/me");
+export const getMyBookings = () =>
+  api.get("/api/bookings/me");
+
 export const getAllBookings = () =>
-  api.get("/bookings/admin/all");
+  api.get("/api/bookings/admin/all");
 
 export const cancelBooking = (id) =>
-  api.delete(`/bookings/${id}`);
+  api.delete(`/api/bookings/${id}`);
 
-// ── Payments ─────────────────────────────────────────────
+// ===================== PAYMENTS =====================
 export const makePayment = (data) =>
-  api.post("/payments", data);
+  api.post("/api/payments", data);
 
 export const getPaymentHistory = () =>
-  api.get("/payments/history");
+  api.get("/api/payments/history");
 
-// ── Alerts ───────────────────────────────────────────────
-export const getAlerts = () => api.get("/alerts");
+// ===================== ALERTS =====================
+export const getAlerts = () =>
+  api.get("/api/alerts");
+
 export const markAlertRead = (id) =>
-  api.put(`/alerts/${id}/read`);
+  api.put(`/api/alerts/${id}/read`);
 
 export const markAllRead = () =>
-  api.put("/alerts/read-all");
+  api.put("/api/alerts/read-all");
 
-// ── Admin ────────────────────────────────────────────────
+// ===================== ADMIN =====================
 export const getAdminStats = () =>
-  api.get("/admin/stats");
+  api.get("/api/admin/stats");
 
 export default api;
+```
