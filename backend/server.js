@@ -145,10 +145,21 @@ app.get("/api/status", handleHealth);
 // ====================== Manual / Trigger Migration ======================
 app.get("/api/migrate", async (req, res) => {
   try {
+    const pool = require("./config/db");
+    const connectionReport = await pool.testAndFixDatabaseConnection();
+    if (!connectionReport.success) {
+      return res.status(500).json({
+        success: false,
+        error: "All database connection attempts failed",
+        connectionReport,
+      });
+    }
+
     const details = await autoMigrateDatabase();
     res.json({
       success: true,
       message: "Database auto-migration triggered successfully",
+      connection: connectionReport,
       details,
     });
   } catch (err) {
