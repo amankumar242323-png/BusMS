@@ -26,6 +26,46 @@ const FALLBACK_ROUTES = [
   { route_id: 22, source: "Bangalore", destination: "Hyderabad", distance: 570, price_per_km: 1.8 },
 ];
 
+let inMemoryRoutes = [...FALLBACK_ROUTES];
+
+function getFallbackRoutes() {
+  return inMemoryRoutes;
+}
+
+function addFallbackRoute(routeData) {
+  const maxId = inMemoryRoutes.reduce((max, r) => Math.max(max, Number(r.route_id) || 0), 0);
+  const newRoute = {
+    route_id: maxId + 1,
+    source: String(routeData.source).trim(),
+    destination: String(routeData.destination).trim(),
+    distance: Number(routeData.distance),
+    price_per_km: routeData.price_per_km !== undefined ? Number(routeData.price_per_km) : 1.5,
+    created_at: new Date().toISOString(),
+  };
+  inMemoryRoutes.push(newRoute);
+  return newRoute;
+}
+
+function updateFallbackRoute(id, routeData) {
+  const index = inMemoryRoutes.findIndex((r) => String(r.route_id) === String(id));
+  if (index === -1) return null;
+  inMemoryRoutes[index] = {
+    ...inMemoryRoutes[index],
+    source: routeData.source ? String(routeData.source).trim() : inMemoryRoutes[index].source,
+    destination: routeData.destination ? String(routeData.destination).trim() : inMemoryRoutes[index].destination,
+    distance: routeData.distance ? Number(routeData.distance) : inMemoryRoutes[index].distance,
+    price_per_km: routeData.price_per_km !== undefined ? Number(routeData.price_per_km) : inMemoryRoutes[index].price_per_km,
+  };
+  return inMemoryRoutes[index];
+}
+
+function deleteFallbackRoute(id) {
+  const initialLength = inMemoryRoutes.length;
+  inMemoryRoutes = inMemoryRoutes.filter((r) => String(r.route_id) !== String(id));
+  return inMemoryRoutes.length < initialLength;
+}
+
+
 const FALLBACK_BUSES = [
   { bus_id: 1, bus_number: "MH-12-AB-1234", bus_type: "AC Sleeper", capacity: 40, driver_name: "Radhika Verma", amenities: ["AC", "WiFi", "Charging Point", "Blanket"] },
   { bus_id: 2, bus_number: "MH-12-CD-5678", bus_type: "Non-AC Seater", capacity: 50, driver_name: "Shraiyansh Chaware", amenities: ["Fan", "Cushion Seats"] },
@@ -394,6 +434,10 @@ function findFallbackUserByEmail(email) {
 
 module.exports = {
   FALLBACK_ROUTES,
+  getFallbackRoutes,
+  addFallbackRoute,
+  updateFallbackRoute,
+  deleteFallbackRoute,
   FALLBACK_BUSES,
   getFallbackSchedules,
   getFallbackScheduleById,

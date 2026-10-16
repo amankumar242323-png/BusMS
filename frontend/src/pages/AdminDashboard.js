@@ -4,6 +4,7 @@ import {
   addRoute,
   addSchedule,
   deleteBus,
+  deleteRoute,
   deleteSchedule,
   getAdminStats,
   getAllBookings,
@@ -46,6 +47,8 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [showAddBus, setShowAddBus] = useState(false);
   const [showAddRoute, setShowAddRoute] = useState(false);
+  const [addingRoute, setAddingRoute] = useState(false);
+  const [routeError, setRouteError] = useState('');
   const [showAddSchedule, setShowAddSchedule] = useState(false);
   const [busForm, setBusForm] = useState(initialBusForm);
   const [routeForm, setRouteForm] = useState(initialRouteForm);
@@ -111,23 +114,76 @@ export default function AdminDashboard() {
   };
 
   const handleAddRoute = async () => {
-    if (!routeForm.source || !routeForm.destination || !routeForm.distance) {
-      toast('Fill required route fields');
+    setRouteError('');
+    const source = routeForm.source?.trim();
+    const destination = routeForm.destination?.trim();
+    const distance = parseInt(routeForm.distance, 10);
+    const price_per_km =
+      routeForm.price_per_km !== '' && !isNaN(parseFloat(routeForm.price_per_km))
+        ? parseFloat(routeForm.price_per_km)
+        : 1.5;
+
+    if (!source || !destination) {
+      const err = 'Please enter both source and destination cities.';
+      setRouteError(err);
+      toast(err);
       return;
     }
 
+    if (source.toLowerCase() === destination.toLowerCase()) {
+      const err = 'Source and destination cannot be the same city.';
+      setRouteError(err);
+      toast(err);
+      return;
+    }
+
+    if (isNaN(distance) || distance <= 0) {
+      const err = 'Distance must be a valid positive number in km.';
+      setRouteError(err);
+      toast(err);
+      return;
+    }
+
+    if (price_per_km <= 0) {
+      const err = 'Price per km must be a positive number.';
+      setRouteError(err);
+      toast(err);
+      return;
+    }
+
+    setAddingRoute(true);
     try {
       const res = await addRoute({
-        ...routeForm,
-        distance: parseInt(routeForm.distance, 10),
-        price_per_km: parseFloat(routeForm.price_per_km),
+        source,
+        destination,
+        distance,
+        price_per_km,
       });
-      setRoutes((prev) => [...prev, res.data]);
+      setRoutes((prev) => {
+        const filtered = prev.filter((r) => r.route_id !== res.data.route_id);
+        return [...filtered, res.data];
+      });
       setShowAddRoute(false);
       setRouteForm(initialRouteForm);
-      toast('Route added');
+      setRouteError('');
+      toast('Route added successfully');
     } catch (err) {
-      toast(err.response?.data?.error || 'Failed to add route');
+      const errMsg = err.response?.data?.error || 'Failed to add route';
+      setRouteError(errMsg);
+      toast(errMsg);
+    } finally {
+      setAddingRoute(false);
+    }
+  };
+
+  const handleDeleteRoute = async (routeId) => {
+    if (!window.confirm(`Are you sure you want to delete Route #${routeId}?`)) return;
+    try {
+      await deleteRoute(routeId);
+      setRoutes((prev) => prev.filter((r) => r.route_id !== routeId));
+      toast('Route deleted successfully');
+    } catch (err) {
+      toast(err.response?.data?.error || 'Failed to delete route');
     }
   };
 
@@ -282,7 +338,7 @@ export default function AdminDashboard() {
           </div>
           <div className="table-responsive">
             <table className="data-table">
-              <thead><tr><th>ID</th><th>From</th><th>To</th><th>Distance</th><th>Price/km</th><th>Base Fare</th></tr></thead>
+              <thead><tr><th>ID</th><th>From</th><th>To</th><th>Distance</th><th>Price/km</th><th>Base Fare</th><th>Actions</th></tr></thead>
               <tbody>
                 {routes.map((route) => (
                   <tr key={route.route_id}>
@@ -292,6 +348,11 @@ export default function AdminDashboard() {
                     <td>{route.distance} km</td>
                     <td>Rs {route.price_per_km}</td>
                     <td style={{ fontWeight: 700, color: '#1a56db' }}>Rs {Math.round(route.distance * route.price_per_km)}</td>
+                    <td>
+                      <button className="btn btn-sm btn-danger" onClick={() => handleDeleteRoute(route.route_id)}>
+                        Delete
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -385,19 +446,105 @@ export default function AdminDashboard() {
       {showAddRoute && (
         <div className="modal-overlay">
           <div className="modal">
-            <div className="modal-header"><h3 className="modal-title">Add New Route</h3><button className="modal-close" onClick={() => setShowAddRoute(false)}>x</button></div>
+            <div className="modal-header">
+              <h3 className="modal-title">Add New Route</h3>
+              <button
+                className="modal-close"
+                onClick={() => {
+                  setShowAddRoute(false);
+                  setRouteError('');
+                }}
+              >
+                x
+              </button>
+            </div>
+            {routeError && (
+              <div
+                style={{
+                  background: '#fef2f2',
+                  border: '1px solid #fecaca',
+                  color: '#ef4444',
+                  fontSize: '0.85rem',
+                  padding: '0.6rem 0.85rem',
+                  borderRadius: 8,
+                  marginBottom: '1rem',
+                }}
+              >
+                {routeError}
+              </div>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div className="input-row">
-                <div className="form-group"><label>From *</label><input className="form-control" placeholder="Mumbai" value={routeForm.source} onChange={(e) => setRouteForm({ ...routeForm, source: e.target.value })} /></div>
-                <div className="form-group"><label>To *</label><input className="form-control" placeholder="Pune" value={routeForm.destination} onChange={(e) => setRouteForm({ ...routeForm, destination: e.target.value })} /></div>
+                <div className="form-group">
+                  <label>From (Source City) *</label>
+                  <input
+                    className="form-control"
+                    placeholder="e.g. Mumbai, Delhi, Lucknow"
+                    value={routeForm.source}
+                    onChange={(e) => {
+                      setRouteForm({ ...routeForm, source: e.target.value });
+                      if (routeError) setRouteError('');
+                    }}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>To (Destination City) *</label>
+                  <input
+                    className="form-control"
+                    placeholder="e.g. Pune, Agra, Varanasi"
+                    value={routeForm.destination}
+                    onChange={(e) => {
+                      setRouteForm({ ...routeForm, destination: e.target.value });
+                      if (routeError) setRouteError('');
+                    }}
+                  />
+                </div>
               </div>
               <div className="input-row">
-                <div className="form-group"><label>Distance (km) *</label><input className="form-control" type="number" placeholder="150" value={routeForm.distance} onChange={(e) => setRouteForm({ ...routeForm, distance: e.target.value })} /></div>
-                <div className="form-group"><label>Price/km (Rs)</label><input className="form-control" type="number" step="0.1" placeholder="1.50" value={routeForm.price_per_km} onChange={(e) => setRouteForm({ ...routeForm, price_per_km: e.target.value })} /></div>
+                <div className="form-group">
+                  <label>Distance (km) *</label>
+                  <input
+                    className="form-control"
+                    type="number"
+                    min="1"
+                    placeholder="e.g. 150"
+                    value={routeForm.distance}
+                    onChange={(e) => {
+                      setRouteForm({ ...routeForm, distance: e.target.value });
+                      if (routeError) setRouteError('');
+                    }}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Price/km (Rs)</label>
+                  <input
+                    className="form-control"
+                    type="number"
+                    step="0.05"
+                    min="0.5"
+                    placeholder="1.50"
+                    value={routeForm.price_per_km}
+                    onChange={(e) => {
+                      setRouteForm({ ...routeForm, price_per_km: e.target.value });
+                      if (routeError) setRouteError('');
+                    }}
+                  />
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
-                <button className="btn btn-outline" onClick={() => setShowAddRoute(false)}>Cancel</button>
-                <button className="btn btn-primary" onClick={handleAddRoute}>Add Route</button>
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                <button
+                  className="btn btn-outline"
+                  onClick={() => {
+                    setShowAddRoute(false);
+                    setRouteError('');
+                  }}
+                  disabled={addingRoute}
+                >
+                  Cancel
+                </button>
+                <button className="btn btn-primary" onClick={handleAddRoute} disabled={addingRoute}>
+                  {addingRoute ? 'Adding Route...' : 'Add Route'}
+                </button>
               </div>
             </div>
           </div>
