@@ -3,64 +3,81 @@ require("dotenv").config();
 
 let pool = null;
 
-function sanitizeConnectionString(rawUrl) {
+function parseDatabaseUrl(rawUrl) {
   try {
     const u = new URL(rawUrl);
-    // Remove sslmode query param so it doesn't conflict with pg's ssl config object
-    u.searchParams.delete("sslmode");
-    u.searchParams.delete("ssl");
-    return u.toString();
+    return {
+      user: decodeURIComponent(u.username),
+      password: decodeURIComponent(u.password),
+      host: u.hostname,
+      port: parseInt(u.port || "5432", 10),
+      database: decodeURIComponent(u.pathname.replace(/^\//, "")),
+    };
   } catch {
-    return rawUrl;
+    return null;
   }
 }
 
-function buildPoolConfig(forceSsl) {
+function buildPoolConfig(sslModeOverride) {
   if (process.env.DATABASE_URL) {
     let host = "";
     let isLocal = false;
     let isRenderInternal = false;
 
-    try {
-      const u = new URL(process.env.DATABASE_URL);
-      host = u.hostname.toLowerCase();
-      isLocal = host === "localhost" || host === "127.0.0.1";
-      // Render internal database hosts: "dpg-xxxxxx-a" (no dot) or ends with ".internal"
-      isRenderInternal = (!host.includes(".") && host.startsWith("dpg-")) || host.endsWith(".internal");
-    } catch {
-      isLocal =
-        process.env.DATABASE_URL.includes("localhost") ||
-        process.env.DATABASE_URL.includes("127.0.0.1");
-      isRenderInternal = /@dpg-[a-z0-9]+-a[:\/]/.test(process.env.DATABASE_URL);
+    const parsed = parseDatabaseUrl(process.env.DATABASE_URL);
+    if (parsed) {
+      host = parsed.host.toLowerCase();
+    } else {
+      host = (process.env.DATABASE_URL.split("@")[1] || "").split("/")[0].split(":")[0].toLowerCase();
     }
 
+    isLocal = host === "localhost" || host === "127.0.0.1";
+    // Render internal hostnames: "dpg-xxxxxx-a" without dots or ends with .internal
+    isRenderInternal = (!host.includes(".") && host.startsWith("dpg-")) || host.endsWith(".internal");
+
     let useSsl;
-    if (forceSsl !== undefined) {
-      useSsl = forceSsl;
+    if (sslModeOverride !== undefined) {
+      useSsl = sslModeOverride;
     } else if (process.env.DB_SSL === "true") {
       useSsl = true;
-    } else if (
-      process.env.DB_SSL === "false" ||
-      isLocal ||
-      isRenderInternal
-    ) {
-      // Render internal network or local does not use SSL
+    } else if (process.env.DB_SSL === "false" || isLocal || isRenderInternal) {
       useSsl = false;
     } else {
-      // External cloud PostgreSQL (Render external, Supabase, Neon) requires SSL
+      // Cloud external databases (e.g. oregon-postgres.render.com, Supabase, Neon) ALWAYS require SSL
       useSsl = true;
     }
+
+    const sslConfig = useSsl
+      ? {
+          rejectUnauthorized: false,
+          servername: host, // REQUIRED: SNI header for Render/Cloud PostgreSQL proxies
+        }
+      : false;
 
     console.log(
       `🔌 PostgreSQL DB Target: host=${host || "DATABASE_URL"}, mode=${
         isRenderInternal ? "Render-Internal" : isLocal ? "Local" : "Cloud-External"
-      }, SSL=${useSsl ? "ENABLED" : "DISABLED"}`
+      }, SSL=${useSsl ? "ENABLED (with SNI)" : "DISABLED"}`
     );
 
+    if (parsed) {
+      return {
+        user: parsed.user,
+        password: parsed.password,
+        host: parsed.host,
+        port: parsed.port,
+        database: parsed.database,
+        ssl: sslConfig,
+        connectionTimeoutMillis: 15000,
+        idleTimeoutMillis: 30000,
+        max: 10,
+      };
+    }
+
     return {
-      connectionString: sanitizeConnectionString(process.env.DATABASE_URL),
-      ssl: useSsl ? { rejectUnauthorized: false } : false,
-      connectionTimeoutMillis: 10000,
+      connectionString: process.env.DATABASE_URL,
+      ssl: sslConfig,
+      connectionTimeoutMillis: 15000,
       idleTimeoutMillis: 30000,
       max: 10,
     };
@@ -79,7 +96,7 @@ function buildPoolConfig(forceSsl) {
     user: process.env.DB_USER || "postgres",
     password: process.env.DB_PASSWORD || "",
     ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false,
-    connectionTimeoutMillis: 10000,
+    connectionTimeoutMillis: 15000,
     idleTimeoutMillis: 30000,
     max: 10,
   };
@@ -88,10 +105,6 @@ function buildPoolConfig(forceSsl) {
 function initPool(forceSsl) {
   const config = buildPoolConfig(forceSsl);
   pool = new Pool(config);
-
-  pool.on("connect", () => {
-    // Suppress noisy logs on high traffic
-  });
 
   pool.on("error", (err) => {
     console.error("❌ PostgreSQL Pool Error:", err.message);
@@ -107,37 +120,51 @@ initPool();
 const testAndFixDatabaseConnection = async () => {
   try {
     const client = await pool.connect();
-    await client.query("SELECT 1");
+    const result = await client.query("SELECT current_database(), current_user");
     client.release();
-    console.log("✅ PostgreSQL verified: Connected and ready");
+    console.log(
+      `✅ PostgreSQL verified: Connected to database "${result.rows[0].current_database}" as "${result.rows[0].current_user}"`
+    );
     return true;
   } catch (err) {
-    console.warn(`⚠️ First DB connection failed (${err.message}). Attempting alternative SSL mode...`);
+    console.warn(`⚠️ First DB connection attempt failed (${err.message})`);
 
-    // Toggle SSL mode and retry
-    const currentSsl = Boolean(pool.options?.ssl);
-    const retrySsl = !currentSsl;
-
-    try {
-      await pool.end().catch(() => {});
-    } catch {}
-
-    initPool(retrySsl);
-
-    try {
-      const client = await pool.connect();
-      await client.query("SELECT 1");
-      client.release();
-      console.log(`✅ PostgreSQL self-healed: Connected successfully with SSL=${retrySsl ? "ENABLED" : "DISABLED"}`);
-      return true;
-    } catch (retryErr) {
-      console.error(`❌ Database connection failed on both SSL modes: ${retryErr.message}`);
-      console.error(`👉 Troubleshooting:
-1. Verify if your Render PostgreSQL service is Active (free-tier databases expire after 30 days).
-2. Check that DATABASE_URL in Render Web Service environment variables is correct.
-3. If using Render Internal URL, ensure both services are in the same region.`);
-      return false;
+    // If it failed with "SSL/TLS required", force SSL=true with SNI
+    if (err.message && err.message.includes("SSL/TLS required")) {
+      console.log("🔄 Reconnecting with enforced SSL and SNI...");
+      try {
+        await pool.end().catch(() => {});
+      } catch {}
+      initPool(true);
+      try {
+        const client = await pool.connect();
+        const result = await client.query("SELECT current_database(), current_user");
+        client.release();
+        console.log(`✅ PostgreSQL connected: "${result.rows[0].current_database}"`);
+        return true;
+      } catch (e) {
+        console.error("❌ Second attempt failed:", e.message);
+      }
+    } else if (err.message && err.message.includes("Connection terminated unexpectedly")) {
+      console.log("🔄 Retrying with alternate TLS configuration...");
+      try {
+        await pool.end().catch(() => {});
+      } catch {}
+      initPool(false);
+      try {
+        const client = await pool.connect();
+        const result = await client.query("SELECT current_database(), current_user");
+        client.release();
+        console.log(`✅ PostgreSQL connected: "${result.rows[0].current_database}"`);
+        return true;
+      } catch (e) {
+        console.error("❌ Retry without SSL also failed:", e.message);
+        // Switch back to SSL=true for cloud
+        initPool(true);
+      }
     }
+
+    return false;
   }
 };
 
