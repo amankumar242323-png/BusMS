@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { getRoutes, searchSchedules } from '../services/api';
+import { getRoutes, searchSchedules, BASE_URL } from '../services/api';
 import BusCard from '../components/BusCard';
 
 export default function SearchBus() {
@@ -13,6 +13,7 @@ export default function SearchBus() {
   const [searched, setSearched] = useState(false);
   const [filter, setFilter] = useState('all');
   const [cities, setCities] = useState([]);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     handleSearch({
@@ -31,8 +32,11 @@ export default function SearchBus() {
           routeData.flatMap((route) => [route.source, route.destination]).filter(Boolean)
         )].sort((a, b) => a.localeCompare(b));
         setCities(nextCities);
-      } catch {
+      } catch (err) {
         setCities([]);
+        if (!error) {
+          setError(err.response?.data?.error || err.message || 'Cannot connect to backend server');
+        }
       }
     };
 
@@ -42,6 +46,7 @@ export default function SearchBus() {
   const handleSearch = async (overrideParams) => {
     setLoading(true);
     setSearched(true);
+    setError(null);
     try {
       const activeSrc = overrideParams?.source !== undefined ? overrideParams.source : src;
       const activeDst = overrideParams?.destination !== undefined ? overrideParams.destination : dst;
@@ -54,8 +59,13 @@ export default function SearchBus() {
 
       const res = await searchSchedules(params);
       setResults(Array.isArray(res.data) ? res.data : []);
-    } catch {
+    } catch (err) {
       setResults([]);
+      const msg =
+        err.response?.data?.error ||
+        err.message ||
+        'Unable to connect to backend';
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -77,6 +87,36 @@ export default function SearchBus() {
         <h1 className="page-title">Search Buses</h1>
         <p className="page-sub">Find the best buses for your journey</p>
       </div>
+
+      {error && (
+        <div style={{
+          background: '#fee2e2',
+          color: '#991b1b',
+          padding: '1rem 1.25rem',
+          borderRadius: '10px',
+          marginBottom: '1.5rem',
+          border: '1px solid #f87171',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '0.75rem'
+        }}>
+          <div>
+            <div style={{ fontWeight: 600 }}>⚠️ Server Communication Notice</div>
+            <div style={{ fontSize: '0.9rem', marginTop: '0.25rem' }}>{error}</div>
+            <div style={{ fontSize: '0.8rem', color: '#7f1d1d', marginTop: '0.35rem' }}>
+              Target API: <code>{BASE_URL}</code>
+              {BASE_URL.includes('onrender.com') && (
+                <span> • <em>Note: Free-tier Render instances sleep when inactive and may take 30–60 seconds to boot up.</em></span>
+              )}
+            </div>
+          </div>
+          <button className="btn btn-sm btn-primary" onClick={() => handleSearch()}>
+            Retry Connection
+          </button>
+        </div>
+      )}
 
       <div className="card" style={{ marginBottom: '2rem' }}>
         <div className="hero-search-bar">

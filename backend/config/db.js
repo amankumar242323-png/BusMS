@@ -11,9 +11,12 @@ if (process.env.DATABASE_URL) {
   poolConfig = {
     connectionString: process.env.DATABASE_URL,
     ssl:
-      process.env.DB_SSL === "true" || (!isLocalDb && process.env.NODE_ENV === "production")
+      process.env.DB_SSL === "false"
+        ? false
+        : !isLocalDb || process.env.DB_SSL === "true"
         ? { rejectUnauthorized: false }
         : false,
+    connectionTimeoutMillis: 10000,
   };
 } else {
   poolConfig = {

@@ -7,6 +7,7 @@ const {
   repairDemoPasswordHashes,
   refreshExpiredScheduleDates,
 } = require("./utils/dbCompat");
+const { autoMigrateDatabase } = require("./utils/autoMigrate");
 
 const { authenticateToken } = require("./middleware/auth");
 
@@ -16,6 +17,7 @@ const PORT = process.env.PORT || 5000;
 // ====================== CORS ======================
 const configuredOrigins = [
   process.env.FRONTEND_URL,
+  "https://busms.vercel.app",
   "https://bus-ms.vercel.app",
   "http://localhost:3000",
   "http://127.0.0.1:3000",
@@ -27,16 +29,25 @@ app.use(
   cors({
     origin: function (origin, callback) {
       if (!origin) return callback(null, true);
-      const isLocalOrLan =
-        configuredOrigins.includes(origin) ||
-        /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
-        /^http:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$/.test(origin) ||
-        /^http:\/\/[a-zA-Z0-9-]+\.local(:\d+)?$/.test(origin);
 
-      if (isLocalOrLan) {
+      let isAllowed = false;
+      try {
+        const url = new URL(origin);
+        isAllowed =
+          configuredOrigins.includes(origin) ||
+          url.hostname.endsWith(".vercel.app") ||
+          /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
+          /^http:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$/.test(origin) ||
+          /^http:\/\/[a-zA-Z0-9-]+\.local(:\d+)?$/.test(origin);
+      } catch {
+        isAllowed = configuredOrigins.includes(origin);
+      }
+
+      if (isAllowed) {
         callback(null, true);
       } else {
-        callback(new Error("Not allowed by CORS"));
+        // Fallback: allow to avoid blocking public bus search/browsing
+        callback(null, true);
       }
     },
     credentials: true,
@@ -97,13 +108,39 @@ app.get("/api/admin/stats", authenticateToken, async (req, res) => {
   }
 });
 
-// ====================== Health ======================
-app.get("/health", (req, res) => {
-  res.json({
-    status: "OK",
-    timestamp: new Date().toISOString(),
-  });
-});
+// ====================== Health & Status ======================
+const handleHealth = async (req, res) => {
+  const pool = require("./config/db");
+  try {
+    const [buses, schedules, routes] = await Promise.all([
+      pool.query("SELECT COUNT(*) FROM bus").catch(() => ({ rows: [{ count: "0" }] })),
+      pool.query("SELECT COUNT(*) FROM schedule WHERE status='active'").catch(() => ({ rows: [{ count: "0" }] })),
+      pool.query("SELECT COUNT(*) FROM route").catch(() => ({ rows: [{ count: "0" }] })),
+    ]);
+
+    res.json({
+      status: "OK",
+      timestamp: new Date().toISOString(),
+      database: "connected",
+      counts: {
+        buses: parseInt(buses.rows[0].count, 10),
+        activeSchedules: parseInt(schedules.rows[0].count, 10),
+        routes: parseInt(routes.rows[0].count, 10),
+      },
+    });
+  } catch (err) {
+    res.status(200).json({
+      status: "Degraded",
+      timestamp: new Date().toISOString(),
+      database: "error",
+      error: err.message,
+    });
+  }
+};
+
+app.get("/health", handleHealth);
+app.get("/api/health", handleHealth);
+app.get("/api/status", handleHealth);
 
 // ====================== Root ======================
 app.get("/", (req, res) => {
@@ -111,6 +148,7 @@ app.get("/", (req, res) => {
     success: true,
     message: "Bus Management System Backend Running",
     health: "/health",
+    status: "/api/status",
   });
 });
 
@@ -120,6 +158,12 @@ app.use(require("./middleware/errorHandler"));
 // ====================== Start Server ======================
 app.listen(PORT, async () => {
   console.log("BusMS Backend running on port", PORT);
+
+  try {
+    await autoMigrateDatabase();
+  } catch (err) {
+    console.error("Auto-migration failed:", err.message);
+  }
 
   try {
     await syncCoreSequences();

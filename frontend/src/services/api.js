@@ -19,13 +19,21 @@ const getBaseUrl = () => {
     }
   }
 
+  // Check runtime localStorage override first
+  if (typeof window !== "undefined") {
+    const storedApi = localStorage.getItem("REACT_APP_API_URL");
+    if (storedApi) {
+      return storedApi.replace(/\/api\/?$/, "").replace(/\/+$/, "");
+    }
+  }
+
   // Fallback to configured environment variable or remote production URL
   const rawUrl =
-    process.env.REACT_APP_API_URL || "https://busms-backend.onrender.com";
+    process.env.REACT_APP_API_URL || "https://busms.onrender.com";
   return rawUrl.replace(/\/api\/?$/, "").replace(/\/+$/, "");
 };
 
-const BASE_URL = getBaseUrl();
+export const BASE_URL = getBaseUrl();
 
 const api = axios.create({
   baseURL: BASE_URL,

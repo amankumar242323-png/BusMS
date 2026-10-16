@@ -1,5 +1,4 @@
-
-\c bus_management;
+-- \c bus_management; -- (Uncomment only if running in local psql CLI with database bus_management)
 
 -- Users
 CREATE TABLE IF NOT EXISTS users (
