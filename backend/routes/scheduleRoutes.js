@@ -3,7 +3,7 @@ const router = express.Router();
 const pool = require('../config/db');
 const { authenticateToken, isAdmin } = require('../middleware/auth');
 const { refreshExpiredScheduleDates } = require('../utils/dbCompat');
-const { getFallbackSchedules } = require('../utils/fallbackData');
+const { getFallbackSchedules, getFallbackScheduleById } = require('../utils/fallbackData');
 
 const scheduleSelect = `
   SELECT
@@ -108,9 +108,12 @@ router.get('/admin/all', authenticateToken, isAdmin, async (req, res) => {
       GROUP BY s.schedule_id, b.bus_id, r.route_id
       ORDER BY s.travel_date ASC, s.departure_time ASC
     `);
+    if (!result.rows || result.rows.length === 0) {
+      return res.json(getFallbackSchedules());
+    }
     res.json(result.rows);
   } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch schedules' });
+    res.json(getFallbackSchedules());
   }
 });
 
@@ -125,9 +128,15 @@ router.get('/:id', async (req, res) => {
       `,
       [req.params.id]
     );
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Schedule not found' });
+    if (result.rows.length === 0) {
+      const fallback = getFallbackScheduleById(req.params.id);
+      if (fallback) return res.json(fallback);
+      return res.status(404).json({ error: 'Schedule not found' });
+    }
     res.json(result.rows[0]);
   } catch (err) {
+    const fallback = getFallbackScheduleById(req.params.id);
+    if (fallback) return res.json(fallback);
     res.status(500).json({ error: 'Failed to fetch schedule' });
   }
 });

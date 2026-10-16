@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../config/db");
 const { authenticateToken, isAdmin } = require("../middleware/auth");
-const { FALLBACK_BUSES } = require("../utils/fallbackData");
+const { FALLBACK_BUSES, getFallbackBusById } = require("../utils/fallbackData");
 
 const busSelect = `
   SELECT
@@ -58,6 +58,8 @@ router.get("/:id", async (req, res) => {
     );
 
     if (result.rows.length === 0) {
+      const fallback = getFallbackBusById(req.params.id);
+      if (fallback) return res.json(fallback);
       return res.status(404).json({
         error: "Bus not found",
       });
@@ -65,7 +67,8 @@ router.get("/:id", async (req, res) => {
 
     res.json(result.rows[0]);
   } catch (err) {
-    console.error("❌ GET /api/buses/:id Error:", err);
+    const fallback = getFallbackBusById(req.params.id);
+    if (fallback) return res.json(fallback);
 
     res.status(500).json({
       error: "Failed to fetch bus",

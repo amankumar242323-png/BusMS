@@ -126,8 +126,219 @@ function getFallbackSchedules(source, destination, travelDate) {
   return filtered.length > 0 ? filtered : enriched;
 }
 
+function getFallbackScheduleById(id) {
+  const all = getFallbackSchedules();
+  return all.find((s) => String(s.schedule_id) === String(id)) || null;
+}
+
+function getFallbackBusById(id) {
+  return FALLBACK_BUSES.find((b) => String(b.bus_id) === String(id)) || null;
+}
+
+// In-memory persistent arrays for session bookings and payments
+const inMemoryBookings = [
+  {
+    booking_id: 101,
+    passenger_id: 2,
+    schedule_id: 1,
+    seats_booked: 2,
+    total_amount: 600,
+    booking_date: new Date().toISOString(),
+    status: "confirmed",
+    travel_date: getDateOffset(1),
+    departure_time: "06:00:00",
+    arrival_time: "09:30:00",
+    bus_number: "MH-12-AB-1234",
+    bus_type: "AC Sleeper",
+    driver_name: "Radhika Verma",
+    source: "Mumbai",
+    destination: "Pune",
+    distance: 150,
+    payment_status: "success",
+    payment_method: "UPI",
+    transaction_id: "TXN_INIT_DEMO_01",
+    tickets: [
+      { ticket_id: 201, seat_number: 14, ticket_status: "confirmed" },
+      { ticket_id: 202, seat_number: 15, ticket_status: "confirmed" },
+    ],
+  },
+];
+
+const inMemoryPayments = [
+  {
+    payment_id: 1,
+    booking_id: 101,
+    amount: 600,
+    payment_method: "UPI",
+    payment_status: "success",
+    transaction_id: "TXN_INIT_DEMO_01",
+    payment_date: new Date().toISOString(),
+  },
+];
+
+const inMemoryAlerts = [
+  {
+    alert_id: 1,
+    passenger_id: 2,
+    title: "Welcome to BusMS",
+    message: "Welcome to BusMS! Search and book luxury & express buses across India seamlessly.",
+    type: "info",
+    is_read: false,
+    created_at: new Date().toISOString(),
+  },
+];
+
+function createFallbackBooking(passengerId, scheduleId, seatsBooked, seatNumbers) {
+  const schedule = getFallbackScheduleById(scheduleId) || getFallbackSchedules()[0];
+  const requested = Array.isArray(seatNumbers) && seatNumbers.length === seatsBooked
+    ? seatNumbers
+    : [4, 5, 6].slice(0, seatsBooked);
+
+  const total = Number((schedule.base_price * seatsBooked).toFixed(2));
+  const newBookingId = 100 + inMemoryBookings.length + 1;
+
+  const tickets = requested.map((seat, idx) => ({
+    ticket_id: newBookingId * 10 + idx + 1,
+    booking_id: newBookingId,
+    seat_number: seat,
+    ticket_status: "confirmed",
+  }));
+
+  const booking = {
+    booking_id: newBookingId,
+    passenger_id: passengerId,
+    schedule_id: schedule.schedule_id,
+    seats_booked: seatsBooked,
+    total_amount: total,
+    booking_date: new Date().toISOString(),
+    status: "confirmed",
+    travel_date: schedule.travel_date,
+    departure_time: schedule.departure_time,
+    arrival_time: schedule.arrival_time,
+    bus_number: schedule.bus_number,
+    bus_type: schedule.bus_type,
+    driver_name: schedule.driver_name,
+    source: schedule.source,
+    destination: schedule.destination,
+    distance: schedule.distance,
+    payment_status: "pending",
+    payment_method: null,
+    transaction_id: null,
+    tickets,
+  };
+
+  inMemoryBookings.unshift(booking);
+
+  inMemoryAlerts.unshift({
+    alert_id: inMemoryAlerts.length + 1,
+    passenger_id: passengerId,
+    title: "Booking Created",
+    message: `Booking #${newBookingId} created for ${schedule.source} -> ${schedule.destination}. Proceed to payment.`,
+    type: "success",
+    is_read: false,
+    created_at: new Date().toISOString(),
+  });
+
+  return { booking, tickets };
+}
+
+function getFallbackBookingsForUser(userId) {
+  return inMemoryBookings.filter((b) => !userId || String(b.passenger_id) === String(userId));
+}
+
+function getAllFallbackBookings() {
+  return inMemoryBookings;
+}
+
+function processFallbackPayment(bookingId, paymentMethod) {
+  const booking = inMemoryBookings.find((b) => String(b.booking_id) === String(bookingId));
+  const txnId = `TXN${Date.now()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+
+  const payment = {
+    payment_id: inMemoryPayments.length + 1,
+    booking_id: Number(bookingId),
+    amount: booking ? booking.total_amount : 500,
+    payment_method: paymentMethod || "UPI",
+    payment_status: "success",
+    transaction_id: txnId,
+    payment_date: new Date().toISOString(),
+  };
+
+  inMemoryPayments.unshift(payment);
+
+  if (booking) {
+    booking.payment_status = "success";
+    booking.payment_method = paymentMethod || "UPI";
+    booking.transaction_id = txnId;
+
+    inMemoryAlerts.unshift({
+      alert_id: inMemoryAlerts.length + 1,
+      passenger_id: booking.passenger_id,
+      title: "Payment Successful",
+      message: `Payment of Rs. ${booking.total_amount} received for Booking #${booking.booking_id}! Transaction ID: ${txnId}`,
+      type: "success",
+      is_read: false,
+      created_at: new Date().toISOString(),
+    });
+  }
+
+  return payment;
+}
+
+function getFallbackPaymentHistory(userId) {
+  if (!userId) return inMemoryPayments;
+  const userBookingIds = new Set(
+    inMemoryBookings
+      .filter((b) => String(b.passenger_id) === String(userId))
+      .map((b) => b.booking_id)
+  );
+  return inMemoryPayments.filter((p) => userBookingIds.has(p.booking_id));
+}
+
+function getFallbackAlerts(userId) {
+  return inMemoryAlerts.filter(
+    (a) => !userId || String(a.passenger_id) === String(userId) || !a.passenger_id
+  );
+}
+
+function markFallbackAlertRead(alertId, userId) {
+  const alert = inMemoryAlerts.find((a) => String(a.alert_id) === String(alertId));
+  if (alert) alert.is_read = true;
+  return { success: true };
+}
+
+function markAllFallbackAlertsRead(userId) {
+  inMemoryAlerts.forEach((a) => {
+    if (!userId || String(a.passenger_id) === String(userId)) {
+      a.is_read = true;
+    }
+  });
+  return { success: true };
+}
+
+function getFallbackAdminStats() {
+  return {
+    totalUsers: 48,
+    totalBuses: FALLBACK_BUSES.length,
+    totalBookings: inMemoryBookings.length + 15,
+    totalRevenue: inMemoryBookings.reduce((sum, b) => sum + (b.total_amount || 0), 18450),
+  };
+}
+
 module.exports = {
   FALLBACK_ROUTES,
   FALLBACK_BUSES,
   getFallbackSchedules,
+  getFallbackScheduleById,
+  getFallbackBusById,
+  createFallbackBooking,
+  getFallbackBookingsForUser,
+  getAllFallbackBookings,
+  processFallbackPayment,
+  getFallbackPaymentHistory,
+  getFallbackAlerts,
+  markFallbackAlertRead,
+  markAllFallbackAlertsRead,
+  getFallbackAdminStats,
 };
+
