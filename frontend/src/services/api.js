@@ -1,8 +1,31 @@
 import axios from "axios";
 
-// Backend URL
-const BASE_URL =
-  process.env.REACT_APP_API_URL || "https://busms.onrender.com";
+// Determine backend URL dynamically based on environment and client hostname
+const getBaseUrl = () => {
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    // Check if running on local machine or local area network (phones/tablets on Wi-Fi)
+    const isLocalOrLan =
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      /^192\.168\.\d+\.\d+$/.test(host) ||
+      /^10\.\d+\.\d+\.\d+$/.test(host) ||
+      /^172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+$/.test(host) ||
+      host.endsWith(".local");
+
+    if (isLocalOrLan) {
+      // Connect to the backend running on the same host machine at port 5000
+      return `http://${host}:5000`;
+    }
+  }
+
+  // Fallback to configured environment variable or remote production URL
+  const rawUrl =
+    process.env.REACT_APP_API_URL || "https://busms-backend.onrender.com";
+  return rawUrl.replace(/\/api\/?$/, "").replace(/\/+$/, "");
+};
+
+const BASE_URL = getBaseUrl();
 
 const api = axios.create({
   baseURL: BASE_URL,
@@ -21,6 +44,23 @@ api.interceptors.request.use((config) => {
 
   return config;
 });
+
+// Handle expired or invalid token responses
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status === 401) {
+      if (localStorage.getItem("token")) {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        if (typeof window !== "undefined" && !window.location.pathname.includes("/login")) {
+          window.location.href = "/login";
+        }
+      }
+    }
+    return Promise.reject(error);
+  }
+);
 
 // AUTH
 export const register = (data) => api.post("/api/auth/register", data);

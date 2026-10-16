@@ -5,6 +5,7 @@ require("dotenv").config();
 const {
   syncCoreSequences,
   repairDemoPasswordHashes,
+  refreshExpiredScheduleDates,
 } = require("./utils/dbCompat");
 
 const { authenticateToken } = require("./middleware/auth");
@@ -13,15 +14,26 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // ====================== CORS ======================
-const allowedOrigins = [
+const configuredOrigins = [
   process.env.FRONTEND_URL,
   "https://bus-ms.vercel.app",
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
 ].filter(Boolean);
 
 app.use(
   cors({
     origin: function (origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (!origin) return callback(null, true);
+      const isLocalOrLan =
+        configuredOrigins.includes(origin) ||
+        /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
+        /^http:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$/.test(origin) ||
+        /^http:\/\/[a-zA-Z0-9-]+\.local(:\d+)?$/.test(origin);
+
+      if (isLocalOrLan) {
         callback(null, true);
       } else {
         callback(new Error("Not allowed by CORS"));
@@ -124,6 +136,15 @@ app.listen(PORT, async () => {
     }
   } catch (err) {
     console.error("Password repair failed:", err.message);
+  }
+
+  try {
+    const refreshed = await refreshExpiredScheduleDates();
+    if (refreshed > 0) {
+      console.log("Refreshed", refreshed, "expired schedule date(s) to upcoming days");
+    }
+  } catch (err) {
+    console.error("Schedule refresh failed:", err.message);
   }
 });
 

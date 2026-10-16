@@ -83,7 +83,11 @@ export default function Ticket() {
 
               {showQR === b.booking_id && (
                 <div style={{ padding: '1rem 2rem 1.5rem', textAlign: 'center', borderTop: '1px dashed #e2e8f0' }}>
-                  <div style={{ width: 120, height: 120, margin: '0 auto', background: '#0f172a', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', color: 'white', fontWeight: 700 }}>QR</div>
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=BUSMS-TICKET-${b.booking_id}`}
+                    alt="Ticket QR Code"
+                    style={{ width: 120, height: 120, borderRadius: 8, margin: '0 auto', display: 'block', border: '1px solid #e2e8f0' }}
+                  />
                   <p style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.5rem' }}>Scan at bus terminal. Valid for one journey.</p>
                 </div>
               )}

@@ -15,15 +15,20 @@ export default function SearchBus() {
   const [cities, setCities] = useState([]);
 
   useEffect(() => {
-    if (urlParams.get('source') || urlParams.get('destination')) handleSearch();
+    handleSearch({
+      source: urlParams.get('source') || '',
+      destination: urlParams.get('destination') || '',
+      travel_date: urlParams.get('travel_date') || '',
+    });
   }, []);
 
   useEffect(() => {
     const loadCities = async () => {
       try {
         const res = await getRoutes();
+        const routeData = Array.isArray(res.data) ? res.data : [];
         const nextCities = [...new Set(
-          res.data.flatMap((route) => [route.source, route.destination]).filter(Boolean)
+          routeData.flatMap((route) => [route.source, route.destination]).filter(Boolean)
         )].sort((a, b) => a.localeCompare(b));
         setCities(nextCities);
       } catch {
@@ -34,21 +39,34 @@ export default function SearchBus() {
     loadCities();
   }, []);
 
-  const handleSearch = async () => {
+  const handleSearch = async (overrideParams) => {
     setLoading(true);
     setSearched(true);
     try {
+      const activeSrc = overrideParams?.source !== undefined ? overrideParams.source : src;
+      const activeDst = overrideParams?.destination !== undefined ? overrideParams.destination : dst;
+      const activeDate = overrideParams?.travel_date !== undefined ? overrideParams.travel_date : date;
+
       const params = {};
-      if (src) params.source = src;
-      if (dst) params.destination = dst;
-      if (date) params.travel_date = date;
+      if (activeSrc) params.source = activeSrc;
+      if (activeDst) params.destination = activeDst;
+      if (activeDate) params.travel_date = activeDate;
+
       const res = await searchSchedules(params);
-      setResults(res.data);
+      setResults(Array.isArray(res.data) ? res.data : []);
     } catch {
       setResults([]);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleReset = () => {
+    setSrc('');
+    setDst('');
+    setDate('');
+    setFilter('all');
+    handleSearch({ source: '', destination: '', travel_date: '' });
   };
 
   const filtered = filter === 'all' ? results : results.filter((r) => r.bus_type.toLowerCase().includes(filter));
@@ -61,7 +79,7 @@ export default function SearchBus() {
       </div>
 
       <div className="card" style={{ marginBottom: '2rem' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '1rem', alignItems: 'end' }}>
+        <div className="hero-search-bar">
           <div className="form-group">
             <label>From</label>
             <select className="form-control" value={src} onChange={(e) => setSrc(e.target.value)}>
@@ -78,17 +96,31 @@ export default function SearchBus() {
           </div>
           <div className="form-group">
             <label>Date</label>
-            <input className="form-control" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <input
+              className="form-control"
+              type="date"
+              value={date}
+              min={new Date().toISOString().split('T')[0]}
+              onChange={(e) => setDate(e.target.value)}
+            />
           </div>
-          <button className="btn btn-primary btn-lg" onClick={handleSearch}>Search</button>
+          <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
+            <button className="btn btn-primary btn-lg" style={{ flex: 1 }} onClick={() => handleSearch()}>Search</button>
+            {(src || dst || date) && (
+              <button className="btn btn-outline btn-lg" onClick={handleReset} title="Clear Filters">Clear</button>
+            )}
+          </div>
         </div>
       </div>
 
       {searched && !loading && (
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
           {[['all', 'All Buses'], ['ac sleeper', 'AC Sleeper'], ['ac seater', 'AC Seater'], ['non-ac', 'Non-AC'], ['luxury', 'Luxury']].map(([v, l]) => (
             <button key={v} className={`btn btn-sm ${filter === v ? 'btn-primary' : 'btn-outline'}`} onClick={() => setFilter(v)}>{l}</button>
           ))}
+          {(src || dst || date || filter !== 'all') && (
+            <button className="btn btn-sm btn-ghost" style={{ color: '#ef4444' }} onClick={handleReset}>Reset All Filters</button>
+          )}
         </div>
       )}
 
@@ -98,8 +130,9 @@ export default function SearchBus() {
         filtered.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">Bus</div>
-            <h3 style={{ marginBottom: '0.5rem' }}>No buses found</h3>
-            <p>Try changing your search criteria or travel date</p>
+            <h3 style={{ marginBottom: '0.5rem' }}>No buses match your criteria</h3>
+            <p style={{ marginBottom: '1rem' }}>Try clearing filters or checking other dates or routes.</p>
+            <button className="btn btn-primary" onClick={handleReset}>Show All Available Buses</button>
           </div>
         ) : (
           <div>

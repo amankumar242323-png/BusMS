@@ -104,10 +104,27 @@ const repairDemoPasswordHashes = async (db = pool) => {
   return result.rowCount;
 };
 
+const refreshExpiredScheduleDates = async (db = pool) => {
+  try {
+    const updateRes = await db.query(`
+      UPDATE schedule
+      SET travel_date = CURRENT_DATE + ((schedule_id % 7) + 1)::integer
+      WHERE travel_date < CURRENT_DATE
+    `);
+    return updateRes.rowCount;
+  } catch (err) {
+    if (err.code !== '42P01') {
+      console.error('Schedule date refresh failed:', err.message);
+    }
+    return 0;
+  }
+};
+
 module.exports = {
   getCompatSchema,
   insertAlert,
   syncSequence,
   syncCoreSequences,
   repairDemoPasswordHashes,
+  refreshExpiredScheduleDates,
 };

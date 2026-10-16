@@ -1,15 +1,31 @@
-import { useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { createBooking } from '../services/api';
+import { useState, useEffect } from 'react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { createBooking, getSchedule } from '../services/api';
 import SeatSelector from '../components/SeatSelector';
 
 export default function Booking() {
   const { state } = useLocation();
+  const [searchParams] = useSearchParams();
+  const scheduleId = searchParams.get('scheduleId');
   const navigate = useNavigate();
-  const schedule = state?.schedule;
+  const [schedule, setSchedule] = useState(state?.schedule || null);
+  const [loadingSchedule, setLoadingSchedule] = useState(Boolean(!state?.schedule && scheduleId));
   const [selectedSeats, setSelectedSeats] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (state?.schedule || !scheduleId) return;
+    setLoadingSchedule(true);
+    getSchedule(scheduleId)
+      .then((res) => setSchedule(res.data))
+      .catch(() => {})
+      .finally(() => setLoadingSchedule(false));
+  }, [scheduleId, state?.schedule]);
+
+  if (loadingSchedule) {
+    return <div className="spinner" style={{ marginTop: '4rem' }} />;
+  }
 
   if (!schedule) {
     return (
@@ -23,7 +39,7 @@ export default function Booking() {
     );
   }
 
-  const price = Math.round(schedule.base_price);
+  const price = Math.round(Number(schedule.base_price) || 0);
   const total = price * selectedSeats.length;
   const booked = Array.isArray(schedule.booked_seats) ? schedule.booked_seats : [];
 
@@ -40,7 +56,7 @@ export default function Booking() {
     setError('');
     try {
       const res = await createBooking({ schedule_id: schedule.schedule_id, seats_booked: selectedSeats.length, seat_numbers: selectedSeats });
-      navigate('/payment', { state: { booking: res.data.booking, schedule } });
+      navigate(`/payment?bookingId=${res.data.booking.booking_id}`, { state: { booking: res.data.booking, schedule } });
     } catch (err) {
       setError(err.response?.data?.error || 'Booking failed. Please try again.');
     } finally {
@@ -50,7 +66,7 @@ export default function Booking() {
 
   return (
     <div className="page">
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
         <div>
           <h1 className="page-title">Select Your Seats</h1>
           <p className="page-sub">{schedule.source} to {schedule.destination} | {new Date(schedule.travel_date).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
@@ -63,7 +79,7 @@ export default function Booking() {
       <div className="grid-2" style={{ alignItems: 'start' }}>
         <div className="card">
           <h3 style={{ fontWeight: 700, marginBottom: '1rem' }}>Seat Map (Max 6 seats)</h3>
-          <SeatSelector capacity={Math.min(schedule.capacity, 32)} bookedSeats={booked} selectedSeats={selectedSeats} onSelect={toggleSeat} />
+          <SeatSelector capacity={schedule.capacity} bookedSeats={booked} selectedSeats={selectedSeats} onSelect={toggleSeat} />
         </div>
 
         <div>

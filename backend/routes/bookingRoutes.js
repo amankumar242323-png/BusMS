@@ -218,6 +218,15 @@ router.delete('/:id', authenticateToken, async (req, res) => {
     await client.query(`UPDATE booking SET status='cancelled' WHERE booking_id=$1`, [booking.booking_id]);
     await client.query(`UPDATE ticket SET ticket_status='cancelled' WHERE booking_id=$1`, [booking.booking_id]);
     await client.query(
+      `UPDATE payment
+       SET payment_status = CASE
+         WHEN payment_status = 'success' THEN 'refunded'
+         ELSE 'cancelled'
+       END
+       WHERE booking_id = $1`,
+      [booking.booking_id]
+    );
+    await client.query(
       `UPDATE schedule SET available_seats = available_seats + $1 WHERE schedule_id = $2`,
       [booking.seats_booked, booking.schedule_id]
     );

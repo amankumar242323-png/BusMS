@@ -1,4 +1,3 @@
-```javascript
 const express = require("express");
 const router = express.Router();
 const pool = require("../config/db");
@@ -237,4 +236,3 @@ router.delete("/:id", authenticateToken, isAdmin, async (req, res) => {
 });
 
 module.exports = router;
-```

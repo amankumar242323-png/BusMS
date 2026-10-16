@@ -53,15 +53,20 @@ export default function AdminDashboard() {
   const [msg, setMsg] = useState('');
 
   useEffect(() => {
-    Promise.all([getBuses(), getRoutes(), getAllSchedules(), getAllBookings(), getAdminStats()])
+    Promise.allSettled([
+      getBuses(),
+      getRoutes(),
+      getAllSchedules(),
+      getAllBookings(),
+      getAdminStats(),
+    ])
       .then(([busRes, routeRes, scheduleRes, bookingRes, statsRes]) => {
-        setBuses(busRes.data);
-        setRoutes(routeRes.data);
-        setSchedules(scheduleRes.data);
-        setBookings(bookingRes.data);
-        setStats(statsRes.data);
+        if (busRes.status === 'fulfilled') setBuses(Array.isArray(busRes.value.data) ? busRes.value.data : []);
+        if (routeRes.status === 'fulfilled') setRoutes(Array.isArray(routeRes.value.data) ? routeRes.value.data : []);
+        if (scheduleRes.status === 'fulfilled') setSchedules(Array.isArray(scheduleRes.value.data) ? scheduleRes.value.data : []);
+        if (bookingRes.status === 'fulfilled') setBookings(Array.isArray(bookingRes.value.data) ? bookingRes.value.data : []);
+        if (statsRes.status === 'fulfilled') setStats(statsRes.value.data || {});
       })
-      .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
@@ -152,10 +157,11 @@ export default function AdminDashboard() {
 
   const handleScheduleStatusChange = async (schedule, nextStatus) => {
     try {
+      const cleanDate = schedule.travel_date ? String(schedule.travel_date).split('T')[0] : '';
       const res = await updateSchedule(schedule.schedule_id, {
         bus_id: schedule.bus_id,
         route_id: schedule.route_id,
-        travel_date: schedule.travel_date,
+        travel_date: cleanDate,
         departure_time: schedule.departure_time,
         arrival_time: schedule.arrival_time,
         status: nextStatus,
@@ -248,7 +254,7 @@ export default function AdminDashboard() {
             <h3 style={{ fontWeight: 700 }}>Fleet ({buses.length})</h3>
             <button className="btn btn-primary btn-sm" onClick={() => setShowAddBus(true)}>Add Bus</button>
           </div>
-          <div style={{ overflowX: 'auto' }}>
+          <div className="table-responsive">
             <table className="data-table">
               <thead><tr><th>Bus Number</th><th>Type</th><th>Capacity</th><th>Driver</th><th>Amenities</th><th>Actions</th></tr></thead>
               <tbody>
@@ -274,7 +280,7 @@ export default function AdminDashboard() {
             <h3 style={{ fontWeight: 700 }}>Routes ({routes.length})</h3>
             <button className="btn btn-primary btn-sm" onClick={() => setShowAddRoute(true)}>Add Route</button>
           </div>
-          <div style={{ overflowX: 'auto' }}>
+          <div className="table-responsive">
             <table className="data-table">
               <thead><tr><th>ID</th><th>From</th><th>To</th><th>Distance</th><th>Price/km</th><th>Base Fare</th></tr></thead>
               <tbody>
@@ -300,7 +306,7 @@ export default function AdminDashboard() {
             <h3 style={{ fontWeight: 700 }}>Schedules ({schedules.length})</h3>
             <button className="btn btn-primary btn-sm" onClick={() => setShowAddSchedule(true)}>Add Schedule</button>
           </div>
-          <div style={{ overflowX: 'auto' }}>
+          <div className="table-responsive">
             <table className="data-table">
               <thead><tr><th>ID</th><th>Route</th><th>Bus</th><th>Date</th><th>Time</th><th>Seats</th><th>Status</th><th>Actions</th></tr></thead>
               <tbody>
@@ -329,7 +335,7 @@ export default function AdminDashboard() {
       {tab === 'bookings' && (
         <div>
           <h3 style={{ fontWeight: 700, marginBottom: '1rem' }}>All Bookings ({bookings.length})</h3>
-          <div style={{ overflowX: 'auto' }}>
+          <div className="table-responsive">
             <table className="data-table">
               <thead><tr><th>ID</th><th>Passenger</th><th>Route</th><th>Date</th><th>Seats</th><th>Amount</th><th>Status</th></tr></thead>
               <tbody>

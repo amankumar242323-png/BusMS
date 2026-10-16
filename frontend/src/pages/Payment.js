@@ -14,6 +14,7 @@ export default function Payment() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('form');
   const [txnId, setTxnId] = useState('');
+  const [error, setError] = useState('');
   const [cardForm, setCardForm] = useState({ number: '', expiry: '', cvv: '', name: '' });
   const [upi, setUpi] = useState('');
 
@@ -56,6 +57,7 @@ export default function Payment() {
 
   const handlePay = async () => {
     setLoading(true);
+    setError('');
     setStatus('processing');
     try {
       const res = await makePayment({ booking_id: booking.booking_id, payment_method: method });
@@ -64,7 +66,7 @@ export default function Payment() {
       setStatus('success');
     } catch (err) {
       setStatus('form');
-      alert(err.response?.data?.error || 'Payment failed. Please try again.');
+      setError(err.response?.data?.error || 'Payment failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -111,6 +113,11 @@ export default function Payment() {
         <h1 className="page-title">Complete Payment</h1>
         <p className="page-sub">Booking #{booking.booking_id} - {schedule?.source} to {schedule?.destination}</p>
       </div>
+      {error && (
+        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 10, padding: '0.75rem 1rem', marginBottom: '1rem', color: '#ef4444', fontSize: '0.875rem' }}>
+          {error}
+        </div>
+      )}
       <div className="grid-2" style={{ alignItems: 'start' }}>
         <div className="card">
           <h3 style={{ fontWeight: 700, marginBottom: '1.25rem' }}>Select Payment Method</h3>

@@ -17,19 +17,30 @@ export default function Register() {
     if (form.password.length < 6) { setError('Password must be at least 6 characters'); return; }
     setLoading(true);
     try {
-      const res = await register({ name:form.name, email:form.email, phone:form.phone, password:form.password });
+      const res = await register({
+        name: form.name.trim(),
+        email: form.email.trim(),
+        phone: form.phone.trim(),
+        password: form.password,
+      });
       loginUser(res.data.user, res.data.token);
       navigate('/dashboard');
     } catch (err) {
-      setError(err.response?.data?.error || 'Registration failed');
+      if (err.response?.data?.error) {
+        setError(err.response.data.error);
+      } else if (err.message === 'Network Error' || !err.response) {
+        setError('Cannot connect to backend server. Please verify backend is running on port 5000.');
+      } else {
+        setError('Registration failed. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div style={{minHeight:'80vh',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#f0f4ff,#e8f4fd)',padding:'2rem'}}>
-      <div className="card card-elevated" style={{width:'100%',maxWidth:460,padding:'2.5rem'}}>
+    <div style={{minHeight:'80vh',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#f0f4ff,#e8f4fd)',padding:'1.25rem'}}>
+      <div className="card card-elevated" style={{width:'100%',maxWidth:460,padding:'2rem 1.5rem'}}>
         <div style={{textAlign:'center',marginBottom:'2rem'}}>
           <div style={{width:60,height:60,background:'linear-gradient(135deg,#f97316,#fb923c)',borderRadius:16,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.75rem',margin:'0 auto 1rem'}}>✈️</div>
           <h2 className="page-title">Create Account</h2>

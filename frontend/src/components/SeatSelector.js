@@ -1,6 +1,9 @@
 export default function SeatSelector({ capacity = 40, bookedSeats = [], selectedSeats = [], onSelect }) {
   const rows = Math.ceil(capacity / 4);
 
+  const bookedSet = new Set((bookedSeats || []).map(Number));
+  const selectedSet = new Set((selectedSeats || []).map(Number));
+
   return (
     <div>
       {/* Legend */}
@@ -14,15 +17,15 @@ export default function SeatSelector({ capacity = 40, bookedSeats = [], selected
       </div>
 
       {/* Seat Grid */}
-      <div style={{display:'flex',gap:8,justifyContent:'center',overflowX:'auto',paddingBottom:'0.5rem'}}>
+      <div style={{display:'flex',gap:8,justifyContent:'flex-start',overflowX:'auto',padding:'0.5rem 0.25rem 1rem',WebkitOverflowScrolling:'touch'}}>
         {Array.from({ length: rows }).map((_, row) => (
           <div key={row} style={{display:'flex',flexDirection:'column',gap:6}}>
             {[0, 1, null, 2, 3].map((col, i) => {
               if (col === null) return <div key="aisle" style={{height:42,width:8}} />;
               const seatNum = row * 4 + col + 1;
               if (seatNum > capacity) return <div key={i} style={{width:42,height:42}} />;
-              const isBooked   = bookedSeats.includes(seatNum);
-              const isSelected = selectedSeats.includes(seatNum);
+              const isBooked   = bookedSet.has(seatNum);
+              const isSelected = selectedSet.has(seatNum);
               return (
                 <button key={i} disabled={isBooked}
                   onClick={() => !isBooked && onSelect(seatNum)}

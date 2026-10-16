@@ -19,8 +19,9 @@ export default function Home() {
     const loadCities = async () => {
       try {
         const res = await getRoutes();
+        const routeData = Array.isArray(res.data) ? res.data : [];
         const nextCities = [...new Set(
-          res.data.flatMap((route) => [route.source, route.destination]).filter(Boolean)
+          routeData.flatMap((route) => [route.source, route.destination]).filter(Boolean)
         )].sort((a, b) => a.localeCompare(b));
         setCities(nextCities);
       } catch {
@@ -41,7 +42,7 @@ export default function Home() {
 
   return (
     <div>
-      <section style={{ background: 'linear-gradient(135deg,#0f172a 0%,#1a2e4a 40%,#1a3a6b 100%)', color: 'white', padding: '5rem 2rem 4rem', position: 'relative', overflow: 'hidden' }}>
+      <section style={{ background: 'linear-gradient(135deg,#0f172a 0%,#1a2e4a 40%,#1a3a6b 100%)', color: 'white', padding: 'clamp(2.5rem, 6vw, 5rem) 1.25rem 3rem', position: 'relative', overflow: 'hidden' }}>
         <div style={{ maxWidth: 900, margin: '0 auto', textAlign: 'center', position: 'relative' }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 999, padding: '0.35rem 1rem', fontSize: '0.8rem', fontWeight: 500, marginBottom: '1.5rem', backdropFilter: 'blur(10px)' }}>
             Smart bus booking across India
@@ -53,7 +54,7 @@ export default function Home() {
             Search hundreds of bus routes, compare prices, pick your seats, and travel comfortably across India.
           </p>
 
-          <div style={{ background: 'white', borderRadius: 24, padding: '1.5rem', boxShadow: '0 24px 64px rgba(0,0,0,0.18)', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '1rem', alignItems: 'end', maxWidth: 860, margin: '0 auto' }}>
+          <div className="hero-search-bar" style={{ background: 'white', borderRadius: 24, padding: '1.5rem', boxShadow: '0 24px 64px rgba(0,0,0,0.18)', maxWidth: 860, margin: '0 auto' }}>
             {[['From', src, setSrc, cities], ['To', dst, setDst, cities.filter((c) => c !== src)]].map(([label, val, setter, opts]) => (
               <div key={label} style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                 <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</label>
@@ -72,8 +73,8 @@ export default function Home() {
         </div>
       </section>
 
-      <div style={{ background: '#1a56db', padding: '1.5rem 2rem' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '1rem', maxWidth: 900, margin: '0 auto', textAlign: 'center' }}>
+      <div style={{ background: '#1a56db', padding: '1.5rem 1.25rem' }}>
+        <div className="stats-grid-4">
           {[['500+', 'Routes'], ['10K+', 'Daily Bookings'], ['50+', 'Operators'], ['4.8/5', 'Rating']].map(([v, l]) => (
             <div key={l}><div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'white', letterSpacing: -1 }}>{v}</div><div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.75)', fontWeight: 500 }}>{l}</div></div>
           ))}

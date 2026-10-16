@@ -11,7 +11,10 @@ export default function Dashboard() {
   const [tab, setTab] = useState('all');
 
   useEffect(() => {
-    getMyBookings().then((res) => setBookings(res.data)).catch(() => {}).finally(() => setLoading(false));
+    getMyBookings()
+      .then((res) => setBookings(Array.isArray(res.data) ? res.data : []))
+      .catch(() => setBookings([]))
+      .finally(() => setLoading(false));
   }, []);
 
   const handleCancel = async (id) => {
@@ -24,11 +27,14 @@ export default function Dashboard() {
     }
   };
 
-  const totalSpent = bookings.filter((b) => b.status === 'confirmed').reduce((s, b) => s + parseFloat(b.total_amount || 0), 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const totalSpent = (bookings || []).filter((b) => b.status === 'confirmed').reduce((s, b) => s + parseFloat(b.total_amount || 0), 0);
   const tabData = tab === 'all'
     ? bookings
     : tab === 'upcoming'
-      ? bookings.filter((b) => new Date(b.travel_date) >= new Date() && b.status !== 'cancelled')
+      ? bookings.filter((b) => new Date(b.travel_date) >= today && b.status !== 'cancelled')
       : bookings.filter((b) => b.status === 'cancelled');
 
   if (loading) return <div className="spinner" style={{ marginTop: '4rem' }} />;
@@ -42,7 +48,7 @@ export default function Dashboard() {
             <h2 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '0.4rem' }}>{user?.name}</h2>
             <p style={{ opacity: 0.7, fontSize: '0.875rem' }}>{user?.email}</p>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1.5rem', textAlign: 'center' }}>
+          <div className="dashboard-stats-grid">
             {[[bookings.filter((b) => b.status !== 'cancelled').length, 'Total Trips'], [`Rs ${Math.round(totalSpent)}`, 'Total Spent'], ['4.9/5', 'Rating']].map(([v, l]) => (
               <div key={l}><div style={{ fontSize: '1.5rem', fontWeight: 800 }}>{v}</div><div style={{ fontSize: '0.72rem', opacity: 0.7 }}>{l}</div></div>
             ))}
@@ -74,7 +80,7 @@ export default function Dashboard() {
           {tab === 'all' && <button className="btn btn-primary mt-2" onClick={() => navigate('/search')}>Book Your First Trip</button>}
         </div>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
+        <div className="table-responsive">
           <table className="data-table">
             <thead><tr><th>Booking ID</th><th>Route</th><th>Date</th><th>Bus</th><th>Seats</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>

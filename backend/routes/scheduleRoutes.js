@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
 const { authenticateToken, isAdmin } = require('../middleware/auth');
+const { refreshExpiredScheduleDates } = require('../utils/dbCompat');
 
 const scheduleSelect = `
   SELECT
@@ -39,33 +40,54 @@ const scheduleSelect = `
 router.get('/', async (req, res) => {
   const { source, destination, travel_date } = req.query;
   try {
-    let query = `
-      ${scheduleSelect}
-      WHERE s.status = 'active'
-    `;
-    const params = [];
+    // Proactively refresh past dates so searches always find active upcoming buses
+    await refreshExpiredScheduleDates().catch(() => {});
 
-    if (source) {
-      params.push(source);
-      query += ` AND LOWER(r.source) = LOWER($${params.length})`;
-    }
-    if (destination) {
-      params.push(destination);
-      query += ` AND LOWER(r.destination) = LOWER($${params.length})`;
-    }
-    if (travel_date) {
-      params.push(travel_date);
-      query += ` AND s.travel_date = $${params.length}`;
-    } else {
-      query += ` AND s.travel_date >= CURRENT_DATE`;
+    const executeScheduleQuery = async (matchExactDate = true, includePastDates = false) => {
+      let query = `${scheduleSelect} WHERE s.status = 'active'`;
+      const params = [];
+
+      if (source && source.trim()) {
+        params.push(source.trim());
+        query += ` AND TRIM(LOWER(r.source)) = TRIM(LOWER($${params.length}))`;
+      }
+      if (destination && destination.trim()) {
+        params.push(destination.trim());
+        query += ` AND TRIM(LOWER(r.destination)) = TRIM(LOWER($${params.length}))`;
+      }
+      if (travel_date && matchExactDate) {
+        params.push(travel_date);
+        query += ` AND s.travel_date = $${params.length}`;
+      } else if (!includePastDates) {
+        query += ` AND s.travel_date >= CURRENT_DATE`;
+      }
+
+      query += `
+        GROUP BY s.schedule_id, b.bus_id, r.route_id
+        ORDER BY s.travel_date ASC, s.departure_time ASC
+      `;
+
+      return pool.query(query, params);
+    };
+
+    // 1. Primary search with exact travel date (if provided)
+    let result = await executeScheduleQuery(true, false);
+
+    // 2. If exact date yielded 0 results, find upcoming buses on the same route
+    if (result.rows.length === 0 && travel_date && (source || destination)) {
+      result = await executeScheduleQuery(false, false);
     }
 
-    query += `
-      GROUP BY s.schedule_id, b.bus_id, r.route_id
-      ORDER BY s.departure_time ASC
-    `;
+    // 3. If still 0 results (e.g. system dates ahead), return active schedules for the route
+    if (result.rows.length === 0 && (source || destination)) {
+      result = await executeScheduleQuery(false, true);
+    }
 
-    const result = await pool.query(query, params);
+    // 4. If no filters were provided and no upcoming buses found, return all active schedules
+    if (result.rows.length === 0 && !source && !destination && !travel_date) {
+      result = await executeScheduleQuery(false, true);
+    }
+
     res.json(result.rows);
   } catch (err) {
     console.error(err);

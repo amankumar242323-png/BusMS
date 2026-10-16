@@ -26,7 +26,13 @@ export default function About() {
           <p style={{color:'#64748b'}}>Passionate people building the future of travel</p>
         </div>
         <div className="grid-3">
-          {[{name:'ABHISHEK YADAV',emoji:'👨‍💼'},{name:'NANDINI KANAUJIYA',emoji:'👩‍💻'},{name:'RADHIKA VERMA',emoji:'👩‍💻'},,{name:'AMAN KUMAR',emoji:'👨‍✈️'},,{name:'SHRAIYANSH CHAWARE',emoji:'👨‍✈️'}].map(m=>(
+          {[
+            { name: 'ABHISHEK YADAV', emoji: '👨‍💼', role: 'Full Stack Developer' },
+            { name: 'NANDINI KANAUJIYA', emoji: '👩‍💻', role: 'Frontend Engineer' },
+            { name: 'RADHIKA VERMA', emoji: '👩‍💻', role: 'UI/UX Designer' },
+            { name: 'AMAN KUMAR', emoji: '👨‍💻', role: 'Project Lead & Backend' },
+            { name: 'SHRAIYANSH CHAWARE', emoji: '👨‍💻', role: 'Database Administrator' },
+          ].map((m) => (
             <div key={m.name} className="card" style={{textAlign:'center',padding:'2rem'}}>
               <div style={{fontSize:'3rem',marginBottom:'0.75rem'}}>{m.emoji}</div>
               <h3 style={{fontWeight:700,marginBottom:'0.25rem'}}>{m.name}</h3>

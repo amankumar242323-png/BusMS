@@ -15,11 +15,17 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      const res = await login(form);
+      const res = await login({ email: form.email.trim(), password: form.password });
       loginUser(res.data.user, res.data.token);
       navigate(res.data.user.role === 'admin' ? '/admin' : '/dashboard');
     } catch (err) {
-      setError(err.response?.data?.error || 'Login failed. Please try again.');
+      if (err.response?.data?.error) {
+        setError(err.response.data.error);
+      } else if (err.message === 'Network Error' || !err.response) {
+        setError('Cannot connect to backend server. Please verify backend is running on port 5000.');
+      } else {
+        setError('Login failed. Please check your credentials and try again.');
+      }
     } finally {
       setLoading(false);
     }

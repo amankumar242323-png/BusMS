@@ -2,8 +2,8 @@ import { Link } from 'react-router-dom';
 
 export default function Footer() {
   return (
-    <footer style={{background:'#0f172a',color:'rgba(255,255,255,0.7)',padding:'3rem 2rem 1.5rem',marginTop:'auto'}}>
-      <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr 1fr',gap:'3rem',maxWidth:1200,margin:'0 auto 2rem'}}>
+    <footer style={{background:'#0f172a',color:'rgba(255,255,255,0.7)',padding:'3rem 1.5rem 1.5rem',marginTop:'auto'}}>
+      <div className="footer-grid">
         <div>
           <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:'0.75rem'}}>
             <div style={{width:36,height:36,background:'linear-gradient(135deg,#1a56db,#3b82f6)',borderRadius:10,display:'flex',alignItems:'center',justifyContent:'center'}}>🚌</div>
@@ -13,7 +13,7 @@ export default function Footer() {
         </div>
         <div>
           <h4 style={{fontFamily:'Syne,sans-serif',color:'white',fontSize:'0.9rem',marginBottom:'1rem',fontWeight:700}}>Quick Links</h4>
-          {[['/','/','Home'],['/search','Search Buses'],['/about','About Us'],['/contact','Contact']].map(([,path,label]) => (
+          {[['/','Home'],['/search','Search Buses'],['/about','About Us'],['/contact','Contact']].map(([path,label]) => (
             <Link key={path} to={path} style={{display:'block',color:'rgba(255,255,255,0.6)',fontSize:'0.85rem',marginBottom:'0.5rem',textDecoration:'none'}}>{label}</Link>
           ))}
         </div>
