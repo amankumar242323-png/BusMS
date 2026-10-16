@@ -1,6 +1,20 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { getMyBookings, makePayment } from '../services/api';
+import { getMyBookings, makePayment, createRazorpayOrder, verifyRazorpayPayment } from '../services/api';
+
+const loadRazorpayScript = () => {
+  return new Promise((resolve) => {
+    if (typeof window !== 'undefined' && window.Razorpay) {
+      return resolve(true);
+    }
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+};
 
 export default function Payment() {
   const { state } = useLocation();
@@ -10,7 +24,7 @@ export default function Payment() {
   const [booking, setBooking] = useState(state?.booking || null);
   const [schedule, setSchedule] = useState(state?.schedule || null);
   const [loadingBooking, setLoadingBooking] = useState(Boolean(bookingId && !state?.booking));
-  const [method, setMethod] = useState('card');
+  const [method, setMethod] = useState('razorpay');
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('form');
   const [txnId, setTxnId] = useState('');
@@ -55,7 +69,96 @@ export default function Payment() {
     );
   }
 
-  const handlePay = async () => {
+  const handleRazorpayPay = async () => {
+    setLoading(true);
+    setError('');
+
+    try {
+      const isLoaded = await loadRazorpayScript();
+      if (!isLoaded) {
+        throw new Error('Razorpay SDK failed to load. Please check your internet connection.');
+      }
+
+      const orderRes = await createRazorpayOrder({ booking_id: booking.booking_id });
+      const order = orderRes.data;
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+
+      // If backend is in Simulation/Sandbox mode (when keys are not configured yet on Render)
+      if (order.is_mock) {
+        setStatus('processing');
+        const mockPayId = `pay_mock_${Date.now()}`;
+        const verifyRes = await verifyRazorpayPayment({
+          booking_id: booking.booking_id,
+          razorpay_order_id: order.order_id,
+          razorpay_payment_id: mockPayId,
+          razorpay_signature: 'mock_signature',
+        });
+        setTxnId(verifyRes.data.transaction_id || mockPayId);
+        setBooking((prev) => ({ ...prev, status: 'confirmed', payment_status: 'success' }));
+        setStatus('success');
+        return;
+      }
+
+      // Real Razorpay Checkout popup
+      const options = {
+        key: order.key_id,
+        amount: order.amount,
+        currency: order.currency || 'INR',
+        name: 'BusMS — Bus Management System',
+        description: `Booking #${booking.booking_id} (${schedule?.source || 'Bus'} -> ${schedule?.destination || 'Destination'})`,
+        image: 'https://cdn-icons-png.flaticon.com/512/1048/1048314.png',
+        order_id: order.order_id,
+        handler: async function (response) {
+          setStatus('processing');
+          try {
+            const verifyRes = await verifyRazorpayPayment({
+              booking_id: booking.booking_id,
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+            });
+            setTxnId(verifyRes.data.transaction_id || response.razorpay_payment_id);
+            setBooking((prev) => ({ ...prev, status: 'confirmed', payment_status: 'success' }));
+            setStatus('success');
+          } catch (verErr) {
+            setStatus('form');
+            setError(verErr.response?.data?.error || 'Payment signature verification failed.');
+          } finally {
+            setLoading(false);
+          }
+        },
+        prefill: {
+          name: user.name || 'Passenger',
+          email: user.email || 'passenger@example.com',
+          contact: user.phone || '9999999999',
+        },
+        theme: {
+          color: '#1a56db',
+        },
+        modal: {
+          ondismiss: function () {
+            setLoading(false);
+            setStatus('form');
+          },
+        },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on('payment.failed', function (resp) {
+        setError(resp.error?.description || 'Payment was declined or cancelled on Razorpay.');
+        setLoading(false);
+        setStatus('form');
+      });
+      rzp.open();
+    } catch (err) {
+      setStatus('form');
+      setError(err.response?.data?.error || err.message || 'Failed to initiate Razorpay payment.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleManualPay = async () => {
     setLoading(true);
     setError('');
     setStatus('processing');
@@ -70,6 +173,13 @@ export default function Payment() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handlePay = () => {
+    if (method === 'razorpay') {
+      return handleRazorpayPay();
+    }
+    return handleManualPay();
   };
 
   if (status === 'processing') {
@@ -122,16 +232,108 @@ export default function Payment() {
         <div className="card">
           <h3 style={{ fontWeight: 700, marginBottom: '1.25rem' }}>Select Payment Method</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
-            {[['card', 'Card', 'Credit / Debit Card'], ['upi', 'UPI', 'UPI (Google Pay, PhonePe, Paytm)'], ['netbanking', 'Bank', 'Net Banking']].map(([value, icon, label]) => (
-              <div key={value} onClick={() => setMethod(value)} style={{ border: `2px solid ${method === value ? '#1a56db' : '#e2e8f0'}`, borderRadius: 12, padding: '1rem', cursor: 'pointer', background: method === value ? 'rgba(26,86,219,0.04)' : 'white', display: 'flex', alignItems: 'center', gap: '0.75rem', transition: 'all 0.2s' }}>
+            {[
+              ['razorpay', '⚡', 'Razorpay (UPI, Cards, NetBanking)', 'Recommended - Fast & Secure'],
+              ['card', '💳', 'Credit / Debit Card (Direct)', 'Visa, Mastercard, RuPay'],
+              ['upi', '📱', 'UPI Direct (GPay, PhonePe, Paytm)', 'Instant UPI ID verification'],
+              ['netbanking', '🏛️', 'Net Banking', 'All major Indian banks']
+            ].map(([value, icon, label, sub]) => (
+              <div
+                key={value}
+                onClick={() => setMethod(value)}
+                style={{
+                  border: `2px solid ${method === value ? '#1a56db' : '#e2e8f0'}`,
+                  borderRadius: 12,
+                  padding: '1rem',
+                  cursor: 'pointer',
+                  background: method === value ? 'rgba(26,86,219,0.04)' : 'white',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  transition: 'all 0.2s',
+                }}
+              >
                 <span style={{ fontSize: '1.4rem' }}>{icon}</span>
-                <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{label}</span>
-                <div style={{ marginLeft: 'auto', width: 18, height: 18, borderRadius: '50%', border: `2px solid ${method === value ? '#1a56db' : '#cbd5e1'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{label}</span>
+                    {value === 'razorpay' && (
+                      <span
+                        style={{
+                          background: '#10b981',
+                          color: 'white',
+                          fontSize: '0.65rem',
+                          fontWeight: 700,
+                          padding: '0.15rem 0.45rem',
+                          borderRadius: 9999,
+                          letterSpacing: '0.5px',
+                        }}
+                      >
+                        RECOMMENDED
+                      </span>
+                    )}
+                  </div>
+                  {sub && <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{sub}</span>}
+                </div>
+                <div
+                  style={{
+                    marginLeft: 'auto',
+                    width: 18,
+                    height: 18,
+                    borderRadius: '50%',
+                    border: `2px solid ${method === value ? '#1a56db' : '#cbd5e1'}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
                   {method === value && <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#1a56db' }} />}
                 </div>
               </div>
             ))}
           </div>
+
+          {method === 'razorpay' && (
+            <div
+              style={{
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: 12,
+                padding: '1.25rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.75rem',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#1e293b', fontWeight: 600, fontSize: '0.9rem' }}>
+                <span style={{ color: '#1a56db', fontSize: '1.1rem' }}>🛡️</span>
+                Razorpay Checkout
+              </div>
+              <p style={{ fontSize: '0.825rem', color: '#64748b', margin: 0, lineHeight: 1.5 }}>
+                Clicking <strong>Pay Now</strong> will securely open the official Razorpay checkout modal:
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                {['Google Pay', 'PhonePe', 'Paytm', 'UPI QR', 'Credit/Debit Cards', 'NetBanking'].map((m) => (
+                  <span
+                    key={m}
+                    style={{
+                      background: '#e0e7ff',
+                      color: '#3730a3',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      padding: '0.2rem 0.5rem',
+                      borderRadius: 6,
+                    }}
+                  >
+                    {m}
+                  </span>
+                ))}
+              </div>
+              <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: 0 }}>
+                RBI authorized & 256-bit encrypted. Instant ticket confirmation upon payment.
+              </p>
+            </div>
+          )}
           {method === 'card' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
               <div className="form-group"><label>Card Number</label><input className="form-control" placeholder="4242 4242 4242 4242" maxLength={19} value={cardForm.number} onChange={(e) => setCardForm({ ...cardForm, number: e.target.value.replace(/\D/g, '').replace(/(.{4})/g, '$1 ').trim() })} /></div>
@@ -171,7 +373,7 @@ export default function Payment() {
           <div className="divider" style={{ margin: '0.5rem 0' }} />
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.2rem', fontWeight: 800, marginBottom: '1rem' }}><span>Total</span><span style={{ color: '#1a56db' }}>Rs {booking.total_amount}</span></div>
           <button className="btn btn-accent btn-xl btn-block" onClick={handlePay} disabled={loading}>
-            Pay Rs {booking.total_amount} Now
+            {loading ? 'Processing...' : method === 'razorpay' ? `Pay with Razorpay · Rs ${booking.total_amount}` : `Pay Rs ${booking.total_amount} Now`}
           </button>
           <p style={{ fontSize: '0.72rem', color: '#94a3b8', textAlign: 'center', marginTop: '0.5rem' }}>256-bit SSL encrypted - 100% Secure</p>
         </div>

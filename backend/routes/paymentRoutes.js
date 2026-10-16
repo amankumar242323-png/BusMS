@@ -2,11 +2,176 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
 const { authenticateToken } = require('../middleware/auth');
+const crypto = require('crypto');
+const Razorpay = require('razorpay');
 const { insertAlert, syncSequence } = require('../utils/dbCompat');
 const {
   processFallbackPayment,
   getFallbackPaymentHistory,
+  getAllFallbackBookings,
 } = require('../utils/fallbackData');
+
+const getRazorpayInstance = () => {
+  if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+    return new Razorpay({
+      key_id: process.env.RAZORPAY_KEY_ID,
+      key_secret: process.env.RAZORPAY_KEY_SECRET,
+    });
+  }
+  return null;
+};
+
+// POST /api/payments/razorpay/order
+router.post('/razorpay/order', authenticateToken, async (req, res) => {
+  const { booking_id } = req.body;
+  if (!booking_id) {
+    return res.status(400).json({ error: 'booking_id is required' });
+  }
+
+  let total_amount = 0;
+  try {
+    const bookingRes = await pool.query(
+      `SELECT * FROM booking WHERE booking_id = $1 AND passenger_id = $2`,
+      [booking_id, req.user.userId]
+    );
+    if (bookingRes.rows.length > 0) {
+      total_amount = Number(bookingRes.rows[0].total_amount);
+    }
+  } catch (err) {
+    console.warn("Could not query booking for Razorpay order from DB:", err.message);
+  }
+
+  if (!total_amount) {
+    const fallbackBooking = getAllFallbackBookings().find((b) => String(b.booking_id) === String(booking_id));
+    if (fallbackBooking) {
+      total_amount = Number(fallbackBooking.total_amount);
+    }
+  }
+
+  if (!total_amount || total_amount <= 0) {
+    total_amount = 500;
+  }
+
+  const amountInPaise = Math.round(total_amount * 100);
+  const rzp = getRazorpayInstance();
+
+  if (rzp) {
+    try {
+      const order = await rzp.orders.create({
+        amount: amountInPaise,
+        currency: 'INR',
+        receipt: `rcpt_busms_${booking_id}_${Date.now()}`,
+        notes: {
+          booking_id: String(booking_id),
+          passenger_id: String(req.user.userId),
+        },
+      });
+
+      return res.json({
+        success: true,
+        order_id: order.id,
+        amount: order.amount,
+        currency: order.currency,
+        key_id: process.env.RAZORPAY_KEY_ID,
+        booking_id,
+        is_mock: false,
+      });
+    } catch (err) {
+      console.error('Razorpay SDK order error:', err.message);
+    }
+  }
+
+  // Simulation mode if keys are not configured or SDK call fails
+  const mockOrderId = `order_mock_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  return res.json({
+    success: true,
+    order_id: mockOrderId,
+    amount: amountInPaise,
+    currency: 'INR',
+    key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_placeholder',
+    booking_id,
+    is_mock: true,
+    message: 'Running in Razorpay Test Simulation mode. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to use live Razorpay.',
+  });
+});
+
+// POST /api/payments/razorpay/verify
+router.post('/razorpay/verify', authenticateToken, async (req, res) => {
+  const { booking_id, razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+
+  if (!booking_id || !razorpay_payment_id) {
+    return res.status(400).json({ error: 'booking_id and razorpay_payment_id are required' });
+  }
+
+  // Verify HMAC signature if live keys are present
+  if (process.env.RAZORPAY_KEY_SECRET && razorpay_order_id && razorpay_signature) {
+    const hmac = crypto.createHmac('sha256', process.env.RAZORPAY_KEY_SECRET);
+    hmac.update(`${razorpay_order_id}|${razorpay_payment_id}`);
+    const generatedSignature = hmac.digest('hex');
+
+    if (generatedSignature !== razorpay_signature) {
+      return res.status(400).json({ error: 'Invalid Razorpay payment signature verification failed' });
+    }
+  }
+
+  let client = null;
+  try {
+    client = await pool.connect();
+    await client.query('BEGIN');
+
+    const bookingRes = await client.query(
+      `SELECT * FROM booking WHERE booking_id = $1 FOR UPDATE`,
+      [booking_id]
+    );
+    const booking = bookingRes.rows[0];
+    const amount = booking ? booking.total_amount : 500;
+
+    await syncSequence(client, 'payment', 'payment_id');
+    const payRes = await client.query(
+      `INSERT INTO payment (booking_id, amount, payment_method, payment_status, transaction_id)
+       VALUES ($1, $2, 'Razorpay', 'success', $3)
+       RETURNING *`,
+      [booking_id, amount, razorpay_payment_id]
+    );
+
+    await client.query(
+      `UPDATE booking SET status = 'confirmed' WHERE booking_id = $1`,
+      [booking_id]
+    );
+
+    await insertAlert(
+      client,
+      req.user.userId,
+      `Razorpay Payment of Rs ${amount} confirmed! Txn ID: ${razorpay_payment_id}. Your ticket is ready.`,
+      'Payment Successful'
+    );
+
+    await client.query('COMMIT');
+    processFallbackPayment(booking_id, 'Razorpay');
+
+    return res.status(200).json({
+      success: true,
+      message: 'Razorpay payment verified and booking confirmed',
+      transaction_id: razorpay_payment_id,
+      payment: payRes.rows[0],
+    });
+  } catch (err) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    console.warn("Razorpay verification DB update failed, falling back to mock store:", err.message);
+
+    const payment = processFallbackPayment(booking_id, 'Razorpay');
+    if (payment) payment.transaction_id = razorpay_payment_id;
+
+    return res.status(200).json({
+      success: true,
+      message: 'Payment verified and booking confirmed',
+      transaction_id: razorpay_payment_id,
+      payment,
+    });
+  } finally {
+    if (client) client.release();
+  }
+});
 
 // POST /api/payments
 router.post('/', authenticateToken, async (req, res) => {

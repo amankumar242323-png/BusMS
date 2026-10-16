@@ -117,6 +117,12 @@ export const cancelBooking = (id) =>
 export const makePayment = (data) =>
   api.post("/api/payments", data);
 
+export const createRazorpayOrder = (data) =>
+  api.post("/api/payments/razorpay/order", data);
+
+export const verifyRazorpayPayment = (data) =>
+  api.post("/api/payments/razorpay/verify", data);
+
 export const getPaymentHistory = () =>
   api.get("/api/payments/history");
 
