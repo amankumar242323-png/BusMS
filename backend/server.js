@@ -142,6 +142,23 @@ app.get("/health", handleHealth);
 app.get("/api/health", handleHealth);
 app.get("/api/status", handleHealth);
 
+// ====================== Manual / Trigger Migration ======================
+app.get("/api/migrate", async (req, res) => {
+  try {
+    const details = await autoMigrateDatabase();
+    res.json({
+      success: true,
+      message: "Database auto-migration triggered successfully",
+      details,
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+
 // ====================== Root ======================
 app.get("/", (req, res) => {
   res.json({

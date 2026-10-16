@@ -312,9 +312,23 @@ const autoMigrateDatabase = async (db = pool) => {
     await refreshExpiredScheduleDates(db);
     await syncCoreSequences(db);
 
-    console.log("✅ Auto-migration & database initialization complete");
+    const [finalBuses, finalRoutes, finalSchedules] = await Promise.all([
+      db.query("SELECT COUNT(*) FROM bus").catch(() => ({ rows: [{ count: 0 }] })),
+      db.query("SELECT COUNT(*) FROM route").catch(() => ({ rows: [{ count: 0 }] })),
+      db.query("SELECT COUNT(*) FROM schedule WHERE status='active'").catch(() => ({ rows: [{ count: 0 }] })),
+    ]);
+
+    const summary = {
+      buses: parseInt(finalBuses.rows[0].count, 10),
+      routes: parseInt(finalRoutes.rows[0].count, 10),
+      activeSchedules: parseInt(finalSchedules.rows[0].count, 10),
+    };
+
+    console.log("✅ Auto-migration & database initialization complete:", summary);
+    return summary;
   } catch (err) {
     console.error("⚠️ Auto-migration error:", err.message);
+    throw err;
   }
 };
 

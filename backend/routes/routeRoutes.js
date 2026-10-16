@@ -9,7 +9,8 @@ router.get('/', async (req, res) => {
     const result = await pool.query('SELECT * FROM route ORDER BY route_id');
     res.json(result.rows);
   } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch routes' });
+    console.error("GET /api/routes error:", err.message);
+    res.status(500).json({ error: 'Failed to fetch routes', details: err.message });
   }
 });
 
