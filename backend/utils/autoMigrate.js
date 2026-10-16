@@ -174,18 +174,24 @@ const autoMigrateDatabase = async (db = pool) => {
           -- Add password column if missing (backfill from password_hash)
           IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'password') THEN
             ALTER TABLE users ADD COLUMN password VARCHAR(255);
-            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'password_hash') THEN
-              UPDATE users SET password = password_hash WHERE password IS NULL;
-            END IF;
           END IF;
 
           -- Add password_hash column if missing (backfill from password)
           IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'password_hash') THEN
             ALTER TABLE users ADD COLUMN password_hash VARCHAR(255);
-            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'password') THEN
-              UPDATE users SET password_hash = password WHERE password_hash IS NULL;
-            END IF;
           END IF;
+
+          -- Drop NOT NULL constraints on password columns to allow flexible compatibility
+          IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'password_hash' AND is_nullable = 'NO') THEN
+            ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
+          END IF;
+          IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'password' AND is_nullable = 'NO') THEN
+            ALTER TABLE users ALTER COLUMN password DROP NOT NULL;
+          END IF;
+
+          -- Synchronize values between password and password_hash
+          UPDATE users SET password = password_hash WHERE password IS NULL AND password_hash IS NOT NULL;
+          UPDATE users SET password_hash = password WHERE password_hash IS NULL AND password IS NOT NULL;
         END IF;
       END $$;`
     );
@@ -198,17 +204,49 @@ const autoMigrateDatabase = async (db = pool) => {
     await safeQuery(db, "idx_route_cities", `CREATE INDEX IF NOT EXISTS idx_route_cities ON route(source, destination)`);
     await safeQuery(db, "idx_bus_amenity_bus", `CREATE INDEX IF NOT EXISTS idx_bus_amenity_bus ON bus_amenity(bus_id)`);
 
-    // 4. Seed Users if not present
-    const schema = await getCompatSchema().catch(() => ({ passwordColumn: 'password' }));
-    const pwdCol = schema.passwordColumn || 'password';
+    // 4. Seed Users safely across all column configurations
+    const userCols = await db.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_name = 'users'`
+    ).catch(() => ({ rows: [] }));
+    const cols = new Set(userCols.rows.map((r) => r.column_name));
+
+    const insertCols = ['name', 'email', 'phone'];
+    const updateClauses = [];
+
+    if (cols.has('password')) {
+      insertCols.push('password');
+      updateClauses.push(`password = '${DEMO_PASSWORD_HASH}'`);
+    }
+    if (cols.has('password_hash')) {
+      insertCols.push('password_hash');
+      updateClauses.push(`password_hash = '${DEMO_PASSWORD_HASH}'`);
+    }
+    insertCols.push('role');
+    updateClauses.push("role = EXCLUDED.role");
+
+    const colsStr = insertCols.join(', ');
+    const updateStr = updateClauses.join(', ');
+
+    const buildUserRow = (name, email, phone, role) => {
+      const parts = [`'${name}'`, `'${email}'`, `'${phone}'`];
+      if (cols.has('password')) parts.push(`'${DEMO_PASSWORD_HASH}'`);
+      if (cols.has('password_hash')) parts.push(`'${DEMO_PASSWORD_HASH}'`);
+      parts.push(`'${role}'`);
+      return `(${parts.join(', ')})`;
+    };
+
+    const userRowsSql = [
+      buildUserRow('Admin User', 'admin@busms.com', '9999999999', 'admin'),
+      buildUserRow('John Traveler', 'john@example.com', '9876543210', 'passenger'),
+      buildUserRow('Jane Smith', 'jane@example.com', '9876543211', 'passenger'),
+    ].join(',\n        ');
+
     await safeQuery(
       db,
       "Seed users",
-      `INSERT INTO users (name, email, phone, ${pwdCol}, role) VALUES
-        ('Admin User', 'admin@busms.com', '9999999999', '${DEMO_PASSWORD_HASH}', 'admin'),
-        ('John Traveler', 'john@example.com', '9876543210', '${DEMO_PASSWORD_HASH}', 'passenger'),
-        ('Jane Smith', 'jane@example.com', '9876543211', '${DEMO_PASSWORD_HASH}', 'passenger')
-      ON CONFLICT (email) DO UPDATE SET ${pwdCol} = EXCLUDED.${pwdCol};`
+      `INSERT INTO users (${colsStr}) VALUES
+        ${userRowsSql}
+      ON CONFLICT (email) DO UPDATE SET ${updateStr};`
     );
 
     // 5. Seed Buses if table has 0 rows
