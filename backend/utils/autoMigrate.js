@@ -1,3 +1,4 @@
+const pool = require("../config/db");
 const { syncCoreSequences, refreshExpiredScheduleDates, getCompatSchema } = require("./dbCompat");
 
 // Password hash for "pass123":
