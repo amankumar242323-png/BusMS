@@ -318,11 +318,78 @@ function markAllFallbackAlertsRead(userId) {
 
 function getFallbackAdminStats() {
   return {
-    totalUsers: 48,
+    totalUsers: 48 + inMemoryUsers.length - 3,
     totalBuses: FALLBACK_BUSES.length,
     totalBookings: inMemoryBookings.length + 15,
     totalRevenue: inMemoryBookings.reduce((sum, b) => sum + (b.total_amount || 0), 18450),
   };
+}
+
+const FALLBACK_PASSWORD_HASH = "$2a$10$KFiVXHDt2HRf8YP101jStu4kfT9obPNKVyspD7JF6JKx3QNt3H6O2"; // pass123
+
+const inMemoryUsers = [
+  {
+    user_id: 1,
+    name: "Admin User",
+    email: "admin@busms.com",
+    role: "admin",
+    phone: "9999999999",
+    password: FALLBACK_PASSWORD_HASH,
+    password_hash: FALLBACK_PASSWORD_HASH,
+  },
+  {
+    user_id: 2,
+    name: "John Traveler",
+    email: "john@example.com",
+    role: "passenger",
+    phone: "9876543210",
+    password: FALLBACK_PASSWORD_HASH,
+    password_hash: FALLBACK_PASSWORD_HASH,
+  },
+  {
+    user_id: 3,
+    name: "Jane Smith",
+    email: "jane@example.com",
+    role: "passenger",
+    phone: "9876543211",
+    password: FALLBACK_PASSWORD_HASH,
+    password_hash: FALLBACK_PASSWORD_HASH,
+  },
+];
+
+function registerFallbackUser(name, email, phone, hashedPassword, forcedId, role = "passenger") {
+  const normalizedEmail = String(email).toLowerCase().trim();
+  const existing = inMemoryUsers.find((u) => u.email.toLowerCase() === normalizedEmail);
+  if (existing) {
+    existing.name = name || existing.name;
+    existing.phone = phone || existing.phone;
+    if (hashedPassword) {
+      existing.password = hashedPassword;
+      existing.password_hash = hashedPassword;
+    }
+    return existing;
+  }
+
+  const newUserId = forcedId || (100 + inMemoryUsers.length + 1);
+  const newUser = {
+    user_id: newUserId,
+    name,
+    email: normalizedEmail,
+    role,
+    phone: phone || null,
+    password: hashedPassword,
+    password_hash: hashedPassword,
+    created_at: new Date().toISOString(),
+  };
+
+  inMemoryUsers.push(newUser);
+  return newUser;
+}
+
+function findFallbackUserByEmail(email) {
+  if (!email) return null;
+  const normalized = String(email).toLowerCase().trim();
+  return inMemoryUsers.find((u) => u.email.toLowerCase() === normalized) || null;
 }
 
 module.exports = {
@@ -340,5 +407,8 @@ module.exports = {
   markFallbackAlertRead,
   markAllFallbackAlertsRead,
   getFallbackAdminStats,
+  registerFallbackUser,
+  findFallbackUserByEmail,
 };
+
 
