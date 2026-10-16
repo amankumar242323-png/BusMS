@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('../config/db');
 const { authenticateToken, isAdmin } = require('../middleware/auth');
 const { refreshExpiredScheduleDates } = require('../utils/dbCompat');
+const { getFallbackSchedules } = require('../utils/fallbackData');
 
 const scheduleSelect = `
   SELECT
@@ -88,10 +89,14 @@ router.get('/', async (req, res) => {
       result = await executeScheduleQuery(false, true);
     }
 
+    if (result.rows.length === 0) {
+      return res.json(getFallbackSchedules(source, destination, travel_date));
+    }
+
     res.json(result.rows);
   } catch (err) {
-    console.error("GET /api/schedules error:", err.message);
-    res.status(500).json({ error: 'Failed to fetch schedules', details: err.message });
+    console.warn("GET /api/schedules DB failed, serving resilient fallback schedules:", err.message);
+    res.json(getFallbackSchedules(source, destination, travel_date));
   }
 });
 

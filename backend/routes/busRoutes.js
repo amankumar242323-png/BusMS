@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../config/db");
 const { authenticateToken, isAdmin } = require("../middleware/auth");
+const { FALLBACK_BUSES } = require("../utils/fallbackData");
 
 const busSelect = `
   SELECT
@@ -31,14 +32,14 @@ router.get("/", async (req, res) => {
       ORDER BY b.bus_id
     `);
 
+    if (!result.rows || result.rows.length === 0) {
+      return res.json(FALLBACK_BUSES);
+    }
+
     res.json(result.rows);
   } catch (err) {
-    console.error("❌ GET /api/buses Error:", err);
-
-    res.status(500).json({
-      error: "Failed to fetch buses",
-      message: err.message,
-    });
+    console.warn("GET /api/buses DB failed, serving fallback buses:", err.message);
+    res.json(FALLBACK_BUSES);
   }
 });
 

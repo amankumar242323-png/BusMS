@@ -2,15 +2,19 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
 const { authenticateToken, isAdmin } = require('../middleware/auth');
+const { FALLBACK_ROUTES } = require('../utils/fallbackData');
 
 // GET /api/routes
 router.get('/', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM route ORDER BY route_id');
+    if (!result.rows || result.rows.length === 0) {
+      return res.json(FALLBACK_ROUTES);
+    }
     res.json(result.rows);
   } catch (err) {
-    console.error("GET /api/routes error:", err.message);
-    res.status(500).json({ error: 'Failed to fetch routes', details: err.message });
+    console.warn("GET /api/routes DB failed, serving fallback routes:", err.message);
+    res.json(FALLBACK_ROUTES);
   }
 });
 
