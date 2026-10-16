@@ -160,6 +160,15 @@ app.listen(PORT, async () => {
   console.log("BusMS Backend running on port", PORT);
 
   try {
+    const pool = require("./config/db");
+    if (pool.testAndFixDatabaseConnection) {
+      await pool.testAndFixDatabaseConnection();
+    }
+  } catch (err) {
+    console.error("Database connection verification error:", err.message);
+  }
+
+  try {
     await autoMigrateDatabase();
   } catch (err) {
     console.error("Auto-migration failed:", err.message);
