@@ -1,5 +1,4 @@
-const pool = require("../config/db");
-const { syncCoreSequences, refreshExpiredScheduleDates } = require("./dbCompat");
+const { syncCoreSequences, refreshExpiredScheduleDates, getCompatSchema } = require("./dbCompat");
 
 // Password hash for "pass123":
 const DEMO_PASSWORD_HASH = "$2a$10$KFiVXHDt2HRf8YP101jStu4kfT9obPNKVyspD7JF6JKx3QNt3H6O2";
@@ -162,12 +161,28 @@ const autoMigrateDatabase = async (db = pool) => {
           END IF;
         END IF;
 
-        -- Ensure users has user_id
+        -- Ensure users has user_id, password, and password_hash
         IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'users') THEN
           IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'user_id') THEN
             IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'id') THEN
               ALTER TABLE users ADD COLUMN user_id INT;
               UPDATE users SET user_id = id WHERE user_id IS NULL;
+            END IF;
+          END IF;
+
+          -- Add password column if missing (backfill from password_hash)
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'password') THEN
+            ALTER TABLE users ADD COLUMN password VARCHAR(255);
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'password_hash') THEN
+              UPDATE users SET password = password_hash WHERE password IS NULL;
+            END IF;
+          END IF;
+
+          -- Add password_hash column if missing (backfill from password)
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'password_hash') THEN
+            ALTER TABLE users ADD COLUMN password_hash VARCHAR(255);
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'password') THEN
+              UPDATE users SET password_hash = password WHERE password_hash IS NULL;
             END IF;
           END IF;
         END IF;
@@ -180,18 +195,19 @@ const autoMigrateDatabase = async (db = pool) => {
     await safeQuery(db, "idx_booking_passenger", `CREATE INDEX IF NOT EXISTS idx_booking_passenger ON booking(passenger_id)`);
     await safeQuery(db, "idx_alerts_passenger", `CREATE INDEX IF NOT EXISTS idx_alerts_passenger ON alerts(passenger_id)`);
     await safeQuery(db, "idx_route_cities", `CREATE INDEX IF NOT EXISTS idx_route_cities ON route(source, destination)`);
-    await safeQuery(db, "idx_route_unique_pair", `CREATE UNIQUE INDEX IF NOT EXISTS idx_route_unique_pair ON route(source, destination)`);
     await safeQuery(db, "idx_bus_amenity_bus", `CREATE INDEX IF NOT EXISTS idx_bus_amenity_bus ON bus_amenity(bus_id)`);
 
     // 4. Seed Users if not present
+    const schema = await getCompatSchema().catch(() => ({ passwordColumn: 'password' }));
+    const pwdCol = schema.passwordColumn || 'password';
     await safeQuery(
       db,
       "Seed users",
-      `INSERT INTO users (name, email, phone, password, role) VALUES
+      `INSERT INTO users (name, email, phone, ${pwdCol}, role) VALUES
         ('Admin User', 'admin@busms.com', '9999999999', '${DEMO_PASSWORD_HASH}', 'admin'),
         ('John Traveler', 'john@example.com', '9876543210', '${DEMO_PASSWORD_HASH}', 'passenger'),
         ('Jane Smith', 'jane@example.com', '9876543211', '${DEMO_PASSWORD_HASH}', 'passenger')
-      ON CONFLICT (email) DO NOTHING;`
+      ON CONFLICT (email) DO UPDATE SET ${pwdCol} = EXCLUDED.${pwdCol};`
     );
 
     // 5. Seed Buses if table has 0 rows
@@ -236,30 +252,38 @@ const autoMigrateDatabase = async (db = pool) => {
       await safeQuery(
         db,
         "Seed routes",
-        `INSERT INTO route (source, destination, distance, price_per_km) VALUES
-          ('Mumbai', 'Pune', 150, 2.00),
-          ('Mumbai', 'Nashik', 167, 1.80),
-          ('Pune', 'Bangalore', 838, 1.50),
-          ('Mumbai', 'Goa', 590, 1.90),
-          ('Delhi', 'Agra', 206, 1.70),
-          ('Delhi', 'Jaipur', 281, 1.60),
-          ('Chennai', 'Bangalore', 346, 1.75),
-          ('Hyderabad', 'Mumbai', 711, 1.85),
-          ('Pune', 'Mumbai', 150, 2.00),
-          ('Nashik', 'Mumbai', 167, 1.80),
-          ('Goa', 'Mumbai', 590, 1.90),
-          ('Bangalore', 'Pune', 838, 1.50),
-          ('Agra', 'Delhi', 206, 1.70),
-          ('Jaipur', 'Delhi', 281, 1.60),
-          ('Bangalore', 'Chennai', 346, 1.75),
-          ('Mumbai', 'Hyderabad', 711, 1.85),
-          ('Pune', 'Goa', 440, 1.95),
-          ('Goa', 'Pune', 440, 1.95),
-          ('Delhi', 'Mumbai', 1410, 1.65),
-          ('Mumbai', 'Delhi', 1410, 1.65),
-          ('Hyderabad', 'Bangalore', 570, 1.80),
-          ('Bangalore', 'Hyderabad', 570, 1.80)
-        ON CONFLICT (source, destination) DO NOTHING;`
+        `INSERT INTO route (source, destination, distance, price_per_km)
+        SELECT s.source, s.destination, s.distance, s.price_per_km
+        FROM (
+          VALUES
+            ('Mumbai', 'Pune', 150, 2.00),
+            ('Mumbai', 'Nashik', 167, 1.80),
+            ('Pune', 'Bangalore', 838, 1.50),
+            ('Mumbai', 'Goa', 590, 1.90),
+            ('Delhi', 'Agra', 206, 1.70),
+            ('Delhi', 'Jaipur', 281, 1.60),
+            ('Chennai', 'Bangalore', 346, 1.75),
+            ('Hyderabad', 'Mumbai', 711, 1.85),
+            ('Pune', 'Mumbai', 150, 2.00),
+            ('Nashik', 'Mumbai', 167, 1.80),
+            ('Goa', 'Mumbai', 590, 1.90),
+            ('Bangalore', 'Pune', 838, 1.50),
+            ('Agra', 'Delhi', 206, 1.70),
+            ('Jaipur', 'Delhi', 281, 1.60),
+            ('Bangalore', 'Chennai', 346, 1.75),
+            ('Mumbai', 'Hyderabad', 711, 1.85),
+            ('Pune', 'Goa', 440, 1.95),
+            ('Goa', 'Pune', 440, 1.95),
+            ('Delhi', 'Mumbai', 1410, 1.65),
+            ('Mumbai', 'Delhi', 1410, 1.65),
+            ('Hyderabad', 'Bangalore', 570, 1.80),
+            ('Bangalore', 'Hyderabad', 570, 1.80)
+        ) AS s(source, destination, distance, price_per_km)
+        WHERE NOT EXISTS (
+          SELECT 1 FROM route r
+          WHERE LOWER(TRIM(r.source)) = LOWER(TRIM(s.source))
+            AND LOWER(TRIM(r.destination)) = LOWER(TRIM(s.destination))
+        );`
       );
     }
 
