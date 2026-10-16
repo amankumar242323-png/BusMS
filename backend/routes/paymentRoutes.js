@@ -21,8 +21,8 @@ const getRazorpayInstance = () => {
   return null;
 };
 
-// POST /api/payments/razorpay/order
-router.post('/razorpay/order', authenticateToken, async (req, res) => {
+// POST /api/payments/razorpay/order or /api/payments/create-order
+router.post(['/razorpay/order', '/create-order'], authenticateToken, async (req, res) => {
   const { booking_id } = req.body;
   if (!booking_id) {
     return res.status(400).json({ error: 'booking_id is required' });
@@ -95,8 +95,8 @@ router.post('/razorpay/order', authenticateToken, async (req, res) => {
   });
 });
 
-// POST /api/payments/razorpay/verify
-router.post('/razorpay/verify', authenticateToken, async (req, res) => {
+// POST /api/payments/razorpay/verify or /api/payments/verify
+router.post(['/razorpay/verify', '/verify'], authenticateToken, async (req, res) => {
   const { booking_id, razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
 
   if (!booking_id || !razorpay_payment_id) {
