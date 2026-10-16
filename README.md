@@ -10,9 +10,6 @@
 
 Built with **React.js, Node.js, Express.js, and PostgreSQL**, the application demonstrates RESTful API development, relational database management, authentication, and full-stack deployment.
 
-🌐 **Live Website:** [https://busms.vercel.app/](https://busms.vercel.app/)
-
-📦 **GitHub Repository:** [BusMS](https://github.com/amankumar242323-png/BusMS)
 
 ---
 
@@ -461,7 +458,7 @@ BusMS uses a split frontend/backend architecture that can be deployed to cloud p
 
 Visit the deployed frontend:
 
-**[BusMS — Live Website](https://busms.vercel.app/)**
+**[BusMS — Live Website](https://bus-ms.vercel.app/)**
 
 The live application may require additional backend and database configuration to enable all features.
 
@@ -516,7 +513,6 @@ MCA Student | Full Stack Development Enthusiast
 
 - GitHub: [amankumar242323-png](https://github.com/amankumar242323-png)
 - Project: [BusMS Repository](https://github.com/amankumar242323-png/BusMS)
-- Live Website: [busms.vercel.app](https://busms.vercel.app/)
 
 ## 📄 License
 
