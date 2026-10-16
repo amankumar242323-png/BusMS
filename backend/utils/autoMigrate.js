@@ -141,6 +141,8 @@ const autoMigrateDatabase = async (db = pool) => {
       db,
       "Compatibility column backfill",
       `DO $$ 
+      DECLARE
+        r RECORD;
       BEGIN 
         -- Ensure booking has passenger_id
         IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'booking') THEN
@@ -164,6 +166,19 @@ const autoMigrateDatabase = async (db = pool) => {
 
         -- Ensure users has user_id, password, and password_hash
         IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'users') THEN
+          -- Drop legacy users_role_check and any check constraints on role column
+          ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+
+          FOR r IN (
+            SELECT con.conname
+            FROM pg_constraint con
+            JOIN pg_class rel ON rel.oid = con.conrelid
+            JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = ANY(con.conkey)
+            WHERE rel.relname = 'users' AND att.attname = 'role' AND con.contype = 'c'
+          ) LOOP
+            EXECUTE 'ALTER TABLE users DROP CONSTRAINT IF EXISTS ' || quote_ident(r.conname);
+          END LOOP;
+
           IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'user_id') THEN
             IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'id') THEN
               ALTER TABLE users ADD COLUMN user_id INT;
@@ -203,6 +218,13 @@ const autoMigrateDatabase = async (db = pool) => {
     await safeQuery(db, "idx_alerts_passenger", `CREATE INDEX IF NOT EXISTS idx_alerts_passenger ON alerts(passenger_id)`);
     await safeQuery(db, "idx_route_cities", `CREATE INDEX IF NOT EXISTS idx_route_cities ON route(source, destination)`);
     await safeQuery(db, "idx_bus_amenity_bus", `CREATE INDEX IF NOT EXISTS idx_bus_amenity_bus ON bus_amenity(bus_id)`);
+
+    // Ensure users_role_check constraint is removed so passenger & admin roles succeed
+    await safeQuery(
+      db,
+      "Drop users_role_check constraint",
+      "ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check"
+    );
 
     // 4. Seed Users safely across all column configurations
     const userCols = await db.query(
